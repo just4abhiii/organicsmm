@@ -551,6 +551,7 @@ serve(async (req) => {
         service_id: eng.service_id,
         quantity: eng.quantity,
         price: eng.price,
+        comments: eng.comments ? String(eng.comments).trim() : null,
         status: 'pending'
       }).select().single()
       if (item) createdItemIds.push({ type: eng.type, itemId: item.id, engagement: eng, finalServiceId: eng.service_id })
@@ -845,6 +846,27 @@ serve(async (req) => {
             validatedEntries.forEach((e, i) => e.run_number = i + 1)
           }
 
+          const allCommentLines = engagement.comments
+            ? String(engagement.comments).split(/\r?\n/).map((l: string) => l.trim()).filter(Boolean)
+            : []
+          if (allCommentLines.length > 0) {
+            let cursor = 0
+            for (const entry of validatedEntries) {
+              const runQty = Number(entry.quantity_to_send) || 1
+              const assignedSlice = allCommentLines.slice(cursor, cursor + runQty)
+              let finalBatch = [...assignedSlice]
+              if (finalBatch.length < runQty) {
+                while (finalBatch.length < runQty) {
+                  finalBatch.push(allCommentLines[cursor % allCommentLines.length])
+                  cursor++
+                }
+              } else {
+                cursor += runQty
+              }
+              entry.comments = finalBatch.join('\n')
+            }
+          }
+
           if (validatedEntries.length > 0) {
             const { error: schedErr } = await supabase.from('organic_run_schedule').insert(validatedEntries)
             if (schedErr) {
@@ -904,12 +926,14 @@ serve(async (req) => {
               if ((count ?? 0) > 0) { inserted = true; break }
               if (engagement.quantity <= 0) { inserted = true; break }
               const fallbackAt = new Date(Date.now() + (5 + Math.random() * 10) * 60 * 1000).toISOString()
+              const fallbackComments = engagement.comments ? String(engagement.comments).trim() : null
               const { error: fbErr } = await supabase.from('organic_run_schedule').insert([{
                 engagement_order_item_id: itemId,
                 run_number: 1,
                 scheduled_at: fallbackAt,
                 quantity_to_send: engagement.quantity,
                 base_quantity: engagement.quantity,
+                comments: fallbackComments,
                 status: 'pending',
               }])
               if (fbErr) throw fbErr

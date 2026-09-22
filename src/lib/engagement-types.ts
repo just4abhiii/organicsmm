@@ -78,6 +78,7 @@ export interface EngagementOrderItem {
   created_at: string;
   updated_at: string;
   runs?: OrganicRun[];
+  comments?: string | null;
   service?: {
     id: string;
     name: string;
@@ -103,6 +104,7 @@ export interface OrganicRun {
   started_at: string | null;
   completed_at: string | null;
   created_at: string;
+  comments?: string | null;
 }
 
 export interface EngagementConfig {
@@ -111,6 +113,7 @@ export interface EngagementConfig {
   quantity: number;
   price: number;
   serviceId: string | null;
+  comments?: string;
   minQuantity?: number;        // Actual service minimum from provider
   // Per-type organic settings (optional - defaults will be used if not set)
   timeLimitHours: number;      // 0 = Auto, >0 = specific hours (actual value for backend)

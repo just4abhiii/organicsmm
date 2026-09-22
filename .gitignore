@@ -27,3 +27,7 @@ dist-ssr
 *.secrets
 deploy/secrets.local
 /opt/migration
+
+*.bak*
+.npmrc
+

@@ -53,6 +53,7 @@ interface Run {
   provider_account_name?: string | null;
   provider_status?: string | null;
   last_status_check?: string | null;
+  comments?: string | null;
 }
 
 interface TypeHistoryCardProps {
@@ -538,6 +539,27 @@ export function TypeHistoryCard({
                             </span>
                           )}
                         </div>
+
+                        {run.comments && (
+                          <div className="mt-2.5 rounded-xl border border-blue-500/20 bg-blue-500/5 p-2.5 space-y-1.5">
+                            <div className="flex items-center justify-between text-xs font-bold text-foreground">
+                              <span className="flex items-center gap-1.5">
+                                <span>💬 Scheduled Comments:</span>
+                                <Badge variant="outline" className="text-primary font-bold bg-primary/10 border-primary/20 text-[10px] px-1.5 py-0.5">
+                                  {run.comments.split(/\r?\n/).map(w => w.trim()).filter(Boolean).length} comments
+                                </Badge>
+                              </span>
+                            </div>
+                            <div className="space-y-1 font-sans text-xs text-foreground/90 max-h-36 overflow-y-auto pr-1">
+                              {run.comments.split(/\r?\n/).map(w => w.trim()).filter(Boolean).map((line, idx) => (
+                                <div key={idx} className="flex items-start gap-1.5 bg-background/80 px-2 py-1.5 rounded-lg border border-border/60 shadow-sm">
+                                  <span className="text-primary font-mono text-[10px] font-bold shrink-0 mt-0.5">{idx + 1}.</span>
+                                  <span className="break-words font-medium text-xs">{line}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Right Side - Provider Name + ID & Edit */}

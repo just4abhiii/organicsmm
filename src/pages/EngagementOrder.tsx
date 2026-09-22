@@ -370,18 +370,21 @@ export default function EngagementOrder() {
         const quantity = ratioQuantity;
 
         const isUserEdited = userEditedQtyRef.current.has(type);
-        const finalQuantity = isUserEdited && prev[type]
-          ? prev[type].quantity
-          : ((isAutoRatios || !prev[type]) ? quantity : prev[type].quantity);
-        const finalPrice = serviceData
+        const finalQuantity = type === 'comments'
+          ? (prev[type]?.comments ? prev[type].comments.split(/\r?\n/).map((w: string) => w.trim()).filter(Boolean).length : 0)
+          : (isUserEdited && prev[type]
+            ? prev[type].quantity
+            : ((isAutoRatios || !prev[type]) ? quantity : prev[type].quantity));
+        const finalPrice = serviceData && serviceData.pricePerK > 0
           ? (finalQuantity / 1000) * serviceData.pricePerK
-          : prev[type]?.price ?? 0;
+          : (type === 'comments' ? 0 : (prev[type]?.price ?? 0));
 
         updated[type] = {
           type,
           enabled: prev[type] ? prev[type].enabled : isEnabledByDefault,
           quantity: finalQuantity,
           price: finalPrice,
+          comments: prev[type]?.comments ?? '',
           serviceId: serviceData?.serviceId ?? prev[type]?.serviceId ?? null,
           minQuantity: serviceData?.minQuantity ?? prev[type]?.minQuantity,
           // Per-type organic settings
@@ -537,6 +540,13 @@ export default function EngagementOrder() {
         );
       }
 
+      const commentsCheck = Object.entries(engagements).find(
+        ([t, c]) => c.enabled && t === 'comments' && (!c.comments || !c.comments.trim())
+      );
+      if (commentsCheck) {
+        throw new Error("Please enter custom comments (one per line) for Comments.");
+      }
+
       const bundle = bundles?.[0];
 
       // Call edge function to process engagement order with per-type organic settings
@@ -575,6 +585,7 @@ export default function EngagementOrder() {
                 variance_percent: config.variancePercent,
                 peak_hours_enabled: config.peakHoursEnabled,
                 scheduled_runs: scheduledRuns,
+                comments: config.comments,
               };
             }),
         },

@@ -248,6 +248,14 @@ export function EngagementTypeCard({
   ]);
 
   const handleToggle = (enabled: boolean) => {
+    if (type === "comments") {
+      const lines = (config.comments || "").split(/\r?\n/).map(w => w.trim()).filter(Boolean);
+      const cnt = lines.length;
+      const rate = pricePerK && pricePerK > 0 ? pricePerK : (config.quantity > 0 ? (config.price * 1000 / config.quantity) : 0);
+      const pr = rate > 0 ? (cnt / 1000 * rate) : 0;
+      onChange({ ...config, enabled, quantity: cnt, price: pr, comments: config.comments || "" });
+      return;
+    }
     if (enabled && config.quantity < providerMin) {
       onChange({
         ...config,
@@ -328,7 +336,7 @@ export function EngagementTypeCard({
   };
 
   // Validation
-  const isBelowMin = config.enabled && config.quantity < providerMin;
+  const isBelowMin = config.enabled && (type === "comments" ? (Boolean(config.comments) && config.quantity < providerMin) : config.quantity < providerMin);
   const isAboveMax = config.enabled && config.quantity > providerMax;
   const hasError = isBelowMin || isAboveMax;
 
@@ -382,7 +390,7 @@ export function EngagementTypeCard({
 
           {/* Right: Input + Price + Switch */}
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-            {config.enabled && (
+            {config.enabled && type !== "comments" && (
               <Input
                 type="text"
                 inputMode="numeric"
@@ -408,6 +416,48 @@ export function EngagementTypeCard({
             </div>
           </div>
         </div>
+
+        {config.enabled && type === "comments" && (
+          <div className="mt-3 pt-3 border-t border-border/50 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                <span>💬 Custom Comments (1 per line)</span>
+                <Badge variant="outline" className="text-[10px] font-semibold bg-primary/10 text-primary border-primary/20 px-1.5 py-0.5">
+                  1 line = 1 comment
+                </Badge>
+              </label>
+              <span className={cn(
+                "text-xs font-bold px-2 py-0.5 rounded-md",
+                config.quantity < providerMin ? "bg-amber-500/20 text-amber-300" : "bg-emerald-500/20 text-emerald-300"
+              )}>
+                {(config.comments || "").split(/\r?\n/).map(w => w.trim()).filter(Boolean).length} comment(s)
+              </span>
+            </div>
+            <textarea
+              rows={4}
+              value={config.comments || ""}
+              onChange={(e) => {
+                const val = e.target.value;
+                const lines = val.split(/\r?\n/).map(w => w.trim()).filter(Boolean);
+                const cnt = lines.length;
+                const rate = pricePerK && pricePerK > 0 ? pricePerK : (config.quantity > 0 ? (config.price * 1000 / config.quantity) : 0);
+                const pr = rate > 0 ? (cnt / 1000 * rate) : 0;
+                setLocalQtyValue(cnt.toString());
+                onChange({
+                  ...config,
+                  comments: val,
+                  quantity: cnt,
+                  price: pr,
+                });
+              }}
+              placeholder={`Enter comments line by line:\nSuperb reel bro 🔥\nNice video keep it up ❤️\nLoved the editing 👏`}
+              className="w-full p-2.5 text-xs font-sans rounded-xl border-2 border-border bg-background focus:border-primary focus:outline-none transition-all placeholder:text-muted-foreground text-foreground resize-y min-h-[90px]"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Type or paste your comments here. Each line is 1 comment and automatically scheduled organically across runs.
+            </p>
+          </div>
+        )}
 
         {/* Quantity Limits - compact */}
         {config.enabled && (

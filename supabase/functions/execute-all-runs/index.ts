@@ -2063,6 +2063,11 @@ async function processAllRuns(supabase: any, executionId: string, startTime: num
           }
           formData.append('quantity', adjustedQty.toString())
 
+          const commentsToSend = (run as any)?.comments || (item as any)?.comments || null
+          if (commentsToSend) {
+            formData.append('comments', String(commentsToSend))
+          }
+
           const controller = new AbortController()
           const timeoutId = setTimeout(() => controller.abort(), 30000)
 
@@ -2440,6 +2445,11 @@ async function processAllRuns(supabase: any, executionId: string, startTime: num
           formData.append('service', providerServiceId || order.service.provider_service_id)
           formData.append('link', sanitizeProviderLink(order.link))
           formData.append('quantity', run.quantity_to_send.toString())
+
+          const legacyCommentsToSend = (run as any)?.comments || (order as any)?.comments || null
+          if (legacyCommentsToSend) {
+            formData.append('comments', String(legacyCommentsToSend))
+          }
 
           const controller = new AbortController()
           const timeoutId = setTimeout(() => controller.abort(), 30000)
