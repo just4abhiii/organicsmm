@@ -76,12 +76,15 @@ import {
   DEFAULT_RATIOS,
   PLATFORM_ENGAGEMENT_TYPES,
   EngagementType,
+  isCustomEngagementType,
+  slugifyCustomType,
 } from '@/lib/engagement-types';
 
 const ENGAGEMENT_ICONS: Record<EngagementType, any> = {
   views: Eye,
   likes: Heart,
   comments: MessageCircle,
+  custom_comments: MessageCircle,
   saves: Bookmark,
   shares: Share2,
   followers: UserPlus,
@@ -281,8 +284,10 @@ export default function AdminBundles() {
       service_id?: string;
       ratio_percent: number;
       is_base: boolean;
+      custom_label?: string;
+      custom_icon_url?: string | null;
     }) => {
-      const { error } = await supabase.from('bundle_items').insert(itemData);
+      const { error } = await supabase.from('bundle_items').insert(itemData as any);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -727,6 +732,8 @@ function BundleCard({
     engagement_type: string;
     ratio_percent: number;
     is_base: boolean;
+    custom_label?: string;
+    custom_icon_url?: string | null;
   }) => void;
   onDeleteItem: (id: string) => void;
   onUpdateItem: (id: string, service_id: string | null) => void;
@@ -744,6 +751,48 @@ function BundleCard({
     const ratio = DEFAULT_RATIOS[type];
     const isBase = type === 'views';
     onAddItem({ engagement_type: type, ratio_percent: ratio, is_base: isBase });
+  };
+
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [customIcon, setCustomIcon] = useState<string | null>(null);
+
+  const handleIconFile = (file?: File) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const size = 96;
+        const canvas = document.createElement('canvas');
+        canvas.width = size; canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        const scale = Math.min(size / img.width, size / img.height);
+        const w = img.width * scale, h = img.height * scale;
+        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        setCustomIcon(canvas.toDataURL('image/png'));
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAddCustom = () => {
+    const name = customName.trim();
+    if (!name) return;
+    let slug = slugifyCustomType(name);
+    if (slug === 'custom_comments') slug = 'custom_comments_2';
+    let n = 2; const base = slug;
+    while (existingTypes.has(slug)) slug = `${base}_${n++}`;
+    onAddItem({
+      engagement_type: slug,
+      ratio_percent: /impression|reach|view|play/i.test(name) ? 100 : 2,
+      is_base: false,
+      custom_label: name,
+      custom_icon_url: customIcon,
+    });
+    setCustomOpen(false); setCustomName(''); setCustomIcon(null);
   };
 
   const useCustomRatios = bundle.use_custom_ratios ?? false;
@@ -874,7 +923,7 @@ function BundleCard({
           {(PLATFORM_ENGAGEMENT_TYPES[bundle.platform] || []).map((type) => {
             const Icon = ENGAGEMENT_ICONS[type];
             const exists = existingTypes.has(type);
-            const label = type === 'watch_hours' ? 'Watch Hours' : type;
+            const label = type === 'watch_hours' ? 'Watch Hours' : type === 'custom_comments' ? 'Custom Comments' : type === 'comments' ? 'Comments' : type;
             return (
               <Button
                 key={type}
@@ -890,7 +939,48 @@ function BundleCard({
               </Button>
             );
           })}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCustomOpen(true)}
+            className="rounded-lg gap-1 border-dashed border-primary/50 text-primary"
+          >
+            <Sparkles className="h-3 w-3" />
+            Custom
+            <Plus className="h-3 w-3" />
+          </Button>
         </div>
+
+        <Dialog open={customOpen} onOpenChange={setCustomOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add Custom Service</DialogTitle>
+              <DialogDescription>
+                Koi bhi naya service (jaise Reach, Impressions) is bundle me add karein. User ko Views/Likes ki tarah dikhega.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Service name</Label>
+                <Input value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="e.g. Reach Impressions" />
+              </div>
+              <div className="space-y-2">
+                <Label>Icon (upload)</Label>
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center overflow-hidden border border-border">
+                    {customIcon ? <img src={customIcon} alt="icon" className="w-full h-full object-contain" /> : <Sparkles className="h-5 w-5 text-muted-foreground" />}
+                  </div>
+                  <Input type="file" accept="image/*" onChange={(e) => handleIconFile(e.target.files?.[0])} />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">Schedule views ke saath-saath fully random organic banega. Quantity user khud dalega. Add karne ke baad "Providers" se service link karein — minimum provider se auto detect hoga.</p>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCustomOpen(false)}>Cancel</Button>
+              <Button onClick={handleAddCustom} disabled={!customName.trim()}>Add</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Items List */}
         <div className="space-y-3">
@@ -912,10 +1002,14 @@ function BundleCard({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-lg bg-background flex items-center justify-center">
-                      <Icon className="h-4 w-4 text-muted-foreground" />
+                      {item.custom_icon_url ? (
+                        <img src={item.custom_icon_url} alt="" className="h-5 w-5 object-contain" />
+                      ) : (
+                        <Icon className="h-4 w-4 text-muted-foreground" />
+                      )}
                     </div>
                     <span className="font-medium capitalize">
-                      {item.engagement_type}
+                      {item.engagement_type === 'custom_comments' ? 'Custom Comments' : (item.custom_label || item.engagement_type)}
                     </span>
                     {/* Only show % badge when custom ratios is ON */}
                     {useCustomRatios && (
@@ -925,6 +1019,9 @@ function BundleCard({
                       >
                         {displayRatio}%
                       </Badge>
+                    )}
+                    {isCustomEngagementType(item.engagement_type) && (
+                      <Badge variant="outline" className="text-[10px]">Custom</Badge>
                     )}
                     {isBase && (
                       <Badge className="bg-primary text-primary-foreground text-[10px]">
@@ -1003,7 +1100,7 @@ function BundleCard({
                           setEditingPrices(prev => { const n = { ...prev }; delete n[item.id]; return n; });
                           return;
                         }
-                        const usd = inr === null ? null : Number((inr / INR_RATE).toFixed(6));
+                        const usd = inr === null ? null : Number((inr / INR_RATE).toFixed(12));
                         onUpdatePrice(item.id, usd);
                         setEditingPrices(prev => { const n = { ...prev }; delete n[item.id]; return n; });
                       }}
@@ -1201,8 +1298,11 @@ function ProviderMappingDialog({
         });
 
         // Build category name for auto-import
-        const categoryOverride = platform && engagementType
-          ? `${platform.charAt(0).toUpperCase() + platform.slice(1)} ${engagementType.charAt(0).toUpperCase() + engagementType.slice(1)}`
+        const formattedType = engagementType === 'custom_comments'
+          ? 'Custom Comments'
+          : (engagementType ? (engagementType.charAt(0).toUpperCase() + engagementType.slice(1)) : '');
+        const categoryOverride = platform && formattedType
+          ? `${platform.charAt(0).toUpperCase() + platform.slice(1)} ${formattedType}`
           : undefined;
 
         // Auto-import the service

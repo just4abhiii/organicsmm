@@ -25,7 +25,8 @@ import {
   DEFAULT_RATIOS,
   DEFAULT_ORGANIC_SETTINGS,
   EngagementBundle,
-  BundleItem
+  BundleItem,
+  registerCustomEngagementTypes
 } from "@/lib/engagement-types";
 import {
   ControlPoint,
@@ -43,7 +44,7 @@ import { FullOrganicConfig } from "@/lib/organic-algorithm";
 type EngagementConfigs = Record<string, EngagementConfig>;
 
 // All possible engagement types - will be filtered based on bundle
-const ALL_ENGAGEMENT_TYPES: EngagementType[] = ['views', 'likes', 'comments', 'saves', 'shares', 'reposts', 'followers', 'subscribers', 'watch_hours', 'retweets'];
+const ALL_ENGAGEMENT_TYPES: EngagementType[] = ['views', 'likes', 'comments', 'custom_comments', 'saves', 'shares', 'reposts', 'followers', 'subscribers', 'watch_hours', 'retweets'];
 
 // Local formatPrice for micro-transactions (USD-only raw formatting)
 const formatPriceRaw = (price: number): string => {
@@ -85,7 +86,7 @@ export default function EngagementOrder() {
   // Form State
   const [platform, setPlatform] = useState('instagram');
   const [link, setLink] = useState('');
-  const [baseQuantity, setBaseQuantity] = useState(10000);
+  const [baseQuantity, setBaseQuantity] = useState(1000);
   // Debounce base quantity for expensive recalculations
   const debouncedBaseQuantity = useDebounce(baseQuantity, 200);
   const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
@@ -119,7 +120,16 @@ export default function EngagementOrder() {
       if (savedOrganic) {
         const parsed = JSON.parse(savedOrganic);
         if (typeof parsed.isOrganicMode === 'boolean') setIsOrganicMode(parsed.isOrganicMode);
-        if (parsed.ratios) setUserSavedRatios(parsed.ratios);
+        if (parsed.ratios && parsed.v === 3) {
+          // Sanitize saved ratios: only finite numbers in 0..100 are allowed.
+          // Views IS the base quantity — its ratio is always 100, never user-overridden.
+          const clean: Record<string, number> = {};
+          Object.entries(parsed.ratios).forEach(([k, v]) => {
+            const n = Number(v);
+            if (k !== 'views' && Number.isFinite(n)) clean[k] = Math.min(100, Math.max(0, n));
+          });
+          setUserSavedRatios(clean);
+        }
       }
     } catch { /* ignore */ }
   }, []);
@@ -163,6 +173,17 @@ export default function EngagementOrder() {
     }
   }, [availablePlatforms, platform]);
 
+  // Reset per-order state when platform changes so stale quantities, prices
+  // and enabled flags from another platform never leak into the new order.
+  const prevPlatformRef = useRef(platform);
+  useEffect(() => {
+    if (prevPlatformRef.current === platform) return;
+    prevPlatformRef.current = platform;
+    setEngagements({});
+    userEditedQtyRef.current = new Set();
+    setDrawModeState({ isEnabled: false, activeType: null, points: {} as Record<EngagementType, ControlPoint[]> });
+  }, [platform]);
+
   // Fetch bundles for selected platform
   const { data: bundles, isLoading: bundlesLoading } = useQuery({
     queryKey: ['bundles', platform],
@@ -194,6 +215,7 @@ export default function EngagementOrder() {
     if (!bundles || bundles.length === 0) return [];
     const bundle = bundles[0];
     if (!bundle?.items) return [];
+    registerCustomEngagementTypes(bundle.items as any[]);
     // Return unique engagement types sorted by preferred order
     const types = bundle.items
       .map(item => item.engagement_type as EngagementType);
@@ -203,9 +225,11 @@ export default function EngagementOrder() {
       views: 1,
       likes: 2,
       comments: 3,
-      shares: 4,
-      reposts: 5,
-      saves: 6,
+      custom_comments: 4,
+      saves: 5,
+      shares: 6,
+      reposts: 7,
+      followers: 8,
     };
 
     return uniqueTypes.sort((a, b) => (PREFERRED_ORDER[a] || 99) - (PREFERRED_ORDER[b] || 99));
@@ -217,8 +241,8 @@ export default function EngagementOrder() {
     const base: Record<EngagementType, number> = {} as Record<EngagementType, number>;
     activeEngagementTypes.forEach((type) => {
       // Use user's custom ratio if available from localStorage, else fallback to default
-      const userRatio = userSavedRatios?.[type];
-      const ratio = typeof userRatio === 'number' ? userRatio : DEFAULT_RATIOS[type];
+      const userRatio = type === 'views' ? undefined : userSavedRatios?.[type];
+      const ratio = type === 'views' ? 100 : (typeof userRatio === 'number' ? userRatio : DEFAULT_RATIOS[type]);
       base[type] = Math.round(debouncedBaseQuantity * (ratio / 100));
     });
     return base;
@@ -249,6 +273,7 @@ export default function EngagementOrder() {
       views: ['view'],
       likes: ['like'],
       comments: ['comment'],
+      custom_comments: ['custom', 'comment'],
       saves: ['save'],
       shares: ['share'],
       reposts: ['repost'],
@@ -282,6 +307,7 @@ export default function EngagementOrder() {
         prices[item.engagement_type] = {
           pricePerK: manualPricePerK ?? item.service.price,
           serviceId: item.service.id,
+          serviceName: item.service.name,
           minQuantity: lowestMatchedMin ?? item.service.min_quantity,
         };
         return;
@@ -310,6 +336,7 @@ export default function EngagementOrder() {
         prices[item.engagement_type] = {
           pricePerK: manualPricePerK ?? item.service.price,
           serviceId: item.service.id,
+          serviceName: item.service.name,
           minQuantity: lowestMatchedMin ?? item.service.min_quantity,
         };
         return;
@@ -355,11 +382,12 @@ export default function EngagementOrder() {
 
       uniqueBundleTypes.forEach((type) => {
         // If auto-ratios is OFF, only enable 'views' by default
-        const isEnabledByDefault = isAutoRatios || type === 'views';
+        // Reach/Impressions is the most expensive add-on: OFF by default, user opts in.
+        const isEnabledByDefault = (isAutoRatios || type === 'views') && !/impression|reach/i.test(type);
 
         // Use user's custom ratio if available from localStorage, else fallback to default
-        const userRatio = userSavedRatios?.[type];
-        const ratioPercent = typeof userRatio === 'number' ? userRatio : (DEFAULT_RATIOS[type] ?? 1);
+        const userRatio = type === 'views' ? undefined : userSavedRatios?.[type];
+        const ratioPercent = type === 'views' ? 100 : (typeof userRatio === 'number' ? userRatio : (DEFAULT_RATIOS[type] ?? 1));
 
         const ratioQuantity = Math.round(debouncedBaseQuantity * (ratioPercent / 100));
 
@@ -369,15 +397,20 @@ export default function EngagementOrder() {
         // If it's below provider min, the per-card warning will appear.
         const quantity = ratioQuantity;
 
+        const isCustomComment = type === 'custom_comments' || (
+          type === 'comments' &&
+          Boolean(serviceData?.serviceName && /custom\s*comment/i.test(serviceData.serviceName) && !/emoji|random/i.test(serviceData.serviceName))
+        );
+
         const isUserEdited = userEditedQtyRef.current.has(type);
-        const finalQuantity = type === 'comments'
+        const finalQuantity = isCustomComment
           ? (prev[type]?.comments ? prev[type].comments.split(/\r?\n/).map((w: string) => w.trim()).filter(Boolean).length : 0)
           : (isUserEdited && prev[type]
             ? prev[type].quantity
             : ((isAutoRatios || !prev[type]) ? quantity : prev[type].quantity));
         const finalPrice = serviceData && serviceData.pricePerK > 0
           ? (finalQuantity / 1000) * serviceData.pricePerK
-          : (type === 'comments' ? 0 : (prev[type]?.price ?? 0));
+          : (isCustomComment ? 0 : (prev[type]?.price ?? 0));
 
         updated[type] = {
           type,
@@ -386,6 +419,7 @@ export default function EngagementOrder() {
           price: finalPrice,
           comments: prev[type]?.comments ?? '',
           serviceId: serviceData?.serviceId ?? prev[type]?.serviceId ?? null,
+          serviceName: serviceData?.serviceName ?? prev[type]?.serviceName,
           minQuantity: serviceData?.minQuantity ?? prev[type]?.minQuantity,
           // Per-type organic settings
           timeLimitHours: prev[type]?.timeLimitHours ?? DEFAULT_ORGANIC_SETTINGS.timeLimitHours,
@@ -540,11 +574,17 @@ export default function EngagementOrder() {
         );
       }
 
-      const commentsCheck = Object.entries(engagements).find(
-        ([t, c]) => c.enabled && t === 'comments' && (!c.comments || !c.comments.trim())
+      const customCommentsCheck = Object.entries(engagements).find(
+        ([t, c]) => {
+          if (!c.enabled) return false;
+          const isCustom = t === 'custom_comments' || (
+            t === 'comments' && Boolean(c.serviceName && /custom\s*comment/i.test(c.serviceName) && !/emoji|random/i.test(c.serviceName))
+          );
+          return isCustom && (!c.comments || !c.comments.trim());
+        }
       );
-      if (commentsCheck) {
-        throw new Error("Please enter custom comments (one per line) for Comments.");
+      if (customCommentsCheck) {
+        throw new Error("Please enter comments (one per line) for Custom Comments.");
       }
 
       const bundle = bundles?.[0];
@@ -1058,3 +1098,4 @@ export default function EngagementOrder() {
     </DashboardLayout>
   );
 }
+

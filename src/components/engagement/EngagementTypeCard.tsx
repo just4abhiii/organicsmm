@@ -27,7 +27,7 @@ import {
   Eye, Heart, MessageCircle, Bookmark, Share2,
   Clock, Sparkles, AlertTriangle,
   Timer, Shuffle, Flame, Calendar, ChevronDown, ChevronUp, List,
-  UserPlus, Bell, Repeat, RefreshCw
+  UserPlus, Bell, Repeat, RefreshCw, Pointer
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -105,6 +105,11 @@ export function EngagementTypeCard({
   useEffect(() => {
     return () => { if (qtyTimerRef.current) clearTimeout(qtyTimerRef.current); };
   }, []);
+
+  const isCustomComment = type === 'custom_comments' || (
+    type === 'comments' &&
+    Boolean(config.serviceName && /custom\s*comment/i.test(config.serviceName) && !/emoji|random/i.test(config.serviceName))
+  );
 
   const engagementConfig = ENGAGEMENT_CONFIG[type];
   const Icon = iconMap[engagementConfig?.icon as keyof typeof iconMap] || Eye;
@@ -347,7 +352,9 @@ export function EngagementTypeCard({
         ? "border-white/20"
         : config.enabled
           ? "border-primary/30"
-          : "border-white/5 opacity-60"
+          : /impression|reach/i.test(type)
+            ? "border-primary/40"
+            : "border-white/5 opacity-60"
     )}>
       <CardContent className="p-2 sm:p-3 overflow-hidden">
         {/* Header Row - compact single line */}
@@ -358,10 +365,14 @@ export function EngagementTypeCard({
               "p-1 sm:p-1.5 rounded-lg sm:rounded-xl shrink-0",
               config.enabled ? "bg-white/10" : "bg-white/5"
             )}>
+              {engagementConfig?.iconUrl ? (
+                <img src={engagementConfig.iconUrl} alt="" className={cn("h-3.5 w-3.5 sm:h-4 sm:w-4 object-contain", !config.enabled && "opacity-30")} />
+              ) : (
               <Icon className={cn(
                 "h-3.5 w-3.5 sm:h-4 sm:w-4",
                 config.enabled ? "text-primary" : "text-white/20"
               )} />
+              )}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap">
@@ -385,12 +396,22 @@ export function EngagementTypeCard({
                   <span>~{formatDuration(scheduleData.duration)}</span>
                 </div>
               )}
+              {!config.enabled && /impression|reach/i.test(type) && (
+                <button
+                  type="button"
+                  onClick={() => handleToggle(true)}
+                  className="mt-1 flex items-center gap-1.5 text-[10px] sm:text-xs font-semibold text-primary hover:underline text-left"
+                >
+                  <Pointer className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0 animate-bounce" aria-hidden="true" />
+                  <span>If you want Reach &amp; Impressions, you can turn it ON</span>
+                </button>
+              )}
             </div>
           </div>
 
           {/* Right: Input + Price + Switch */}
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-            {config.enabled && type !== "comments" && (
+            {config.enabled && !isCustomComment && (
               <Input
                 type="text"
                 inputMode="numeric"
@@ -407,17 +428,26 @@ export function EngagementTypeCard({
             <Badge variant="outline" className="font-black text-[10px] sm:text-xs border-white/10 bg-white/5 text-white/60 px-1.5 sm:px-2 py-0.5 sm:py-1 shrink-0">
               {formatPrice(config.price)}
             </Badge>
+            {!config.enabled && /impression|reach/i.test(type) && (
+              <button type="button" aria-label="Turn on Reach & Impressions" onClick={() => handleToggle(true)} className="flex items-center gap-0.5 text-primary font-black text-[10px] sm:text-xs animate-bounce">
+                <span>ON</span>
+                <Pointer className="h-5 w-5 sm:h-6 sm:w-6 rotate-90" strokeWidth={2.75} aria-hidden="true" />
+              </button>
+            )}
             <div className="scale-90 sm:scale-100">
               <Switch
                 checked={config.enabled}
                 onCheckedChange={handleToggle}
-                className="data-[state=checked]:bg-primary"
+                className={cn(
+                  "data-[state=checked]:bg-primary",
+                  !config.enabled && /impression|reach/i.test(type) && "h-7 w-12 border-2 border-primary bg-primary/30 shadow-[0_0_10px_hsl(var(--primary)/0.6)] animate-pulse"
+                )}
               />
             </div>
           </div>
         </div>
 
-        {config.enabled && type === "comments" && (
+        {config.enabled && isCustomComment && (
           <div className="mt-3 pt-3 border-t border-border/50 space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-foreground flex items-center gap-1.5">

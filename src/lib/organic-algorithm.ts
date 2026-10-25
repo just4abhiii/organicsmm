@@ -1,3 +1,4 @@
+const pt = (t: string): string => (t && t.startsWith("custom_") && t !== "custom_comments") ? "views" : t;
 // ===============================================
 // ULTRA ORGANIC ALGORITHM v3.0 - DEEP ANTI-BOT SYSTEM
 // Each engagement type has completely independent, multi-layer randomization
@@ -37,6 +38,7 @@ export const PROVIDER_MINIMUMS: Record<string, number> = {
   views: 100,
   likes: 10,
   comments: 10,
+  custom_comments: 10,
   saves: 10,
   shares: 10,
 };
@@ -46,6 +48,7 @@ export const PROVIDER_MAXIMUMS: Record<string, number> = {
   views: 10000000,    // 10M
   likes: 500000,      // 500K
   comments: 100000,   // 100K
+  custom_comments: 100000,
   saves: 50000,       // 50K
   shares: 100000,     // 100K
 };
@@ -56,6 +59,7 @@ const TYPE_BASE_INTERVALS: Record<string, { min: number; max: number; jitter: nu
   views: { min: 15, max: 120, jitter: 40, chaosMultiplier: 2.2 },     // Views: spread out, natural gaps
   likes: { min: 25, max: 180, jitter: 50, chaosMultiplier: 2.5 },     // Likes: very unpredictable
   comments: { min: 60, max: 360, jitter: 80, chaosMultiplier: 3.0 },  // Comments: extremely sparse
+  custom_comments: { min: 60, max: 360, jitter: 80, chaosMultiplier: 3.0 },
   saves: { min: 90, max: 480, jitter: 100, chaosMultiplier: 3.2 },    // Saves: very sparse and chaotic
   shares: { min: 50, max: 240, jitter: 60, chaosMultiplier: 2.8 },    // Shares: medium chaos
 };
@@ -67,6 +71,7 @@ const TYPE_RUN_SIZE: Record<string, { min: number; max: number; variance: number
   views: { min: 100, max: 250, variance: 0.65, spikeMax: 350, maxMultiplier: 2.5, hardCap: 400 },     // Views: 100-350 range (human-like)
   likes: { min: 10, max: 45, variance: 0.70, spikeMax: 80, maxMultiplier: 4.0, hardCap: 100 },        // Likes: small batches
   comments: { min: 10, max: 20, variance: 0.60, spikeMax: 35, maxMultiplier: 3.0, hardCap: 50 },      // Comments: very small
+  custom_comments: { min: 10, max: 20, variance: 0.60, spikeMax: 35, maxMultiplier: 3.0, hardCap: 50 },
   saves: { min: 10, max: 25, variance: 0.65, spikeMax: 45, maxMultiplier: 3.0, hardCap: 60 },         // Saves: small
   shares: { min: 10, max: 30, variance: 0.68, spikeMax: 55, maxMultiplier: 3.5, hardCap: 70 },        // Shares: small
 };
@@ -81,7 +86,7 @@ function getScaledRunSize(
   totalQuantity: number,
   providerMin: number
 ): { min: number; max: number; spikeMax: number; ultraMax: number } {
-  const base = TYPE_RUN_SIZE[engagementType] || { min: 10, max: 50, spikeMax: 150, maxMultiplier: 2.5, hardCap: 200 };
+  const base = TYPE_RUN_SIZE[pt(engagementType)] || { min: 10, max: 50, spikeMax: 150, maxMultiplier: 2.5, hardCap: 200 };
 
   // Use hardCap as absolute maximum - never exceed this per run
   const hardCap = (base as any).hardCap || 400;
@@ -103,7 +108,7 @@ function getScaledRunSize(
     shares: 2000,    // Scale up after 2K
   };
 
-  const threshold = scaleThresholds[engagementType] || 10000;
+  const threshold = scaleThresholds[pt(engagementType)] || 10000;
 
   if (totalQuantity <= threshold) {
     return {
@@ -228,7 +233,7 @@ const SESSION_MULTIPLIERS: Record<typeof SESSION_TYPES[number], { interval: numb
  * Generate a random session type based on engagement type probabilities
  */
 function getRandomSessionType(engagementType: string): typeof SESSION_TYPES[number] {
-  const probs = SESSION_PROBABILITIES[engagementType] || SESSION_PROBABILITIES.views;
+  const probs = SESSION_PROBABILITIES[pt(engagementType)] || SESSION_PROBABILITIES.views;
   const rand = Math.random();
   let cumulative = 0;
 
@@ -254,17 +259,17 @@ function calculateHumanScore(
   let score = 50; // Base score
 
   // Penalize consistent quantities
-  const avgBatch = (TYPE_RUN_SIZE[engagementType]?.min || 10 + TYPE_RUN_SIZE[engagementType]?.max || 100) / 2;
+  const avgBatch = (TYPE_RUN_SIZE[pt(engagementType)]?.min || 10 + TYPE_RUN_SIZE[pt(engagementType)]?.max || 100) / 2;
   const quantityVariance = Math.abs(quantity - avgBatch) / avgBatch;
   score += quantityVariance * 20; // More variance = more human
 
   // Reward natural hour patterns
-  const hourPattern = TYPE_DAILY_PATTERNS[engagementType] || TYPE_DAILY_PATTERNS.views;
+  const hourPattern = TYPE_DAILY_PATTERNS[pt(engagementType)] || TYPE_DAILY_PATTERNS.views;
   if (hourPattern[hour] > 1.0) score += 10; // Peak hour activity
   if (hour >= 2 && hour <= 5 && quantity < avgBatch) score += 15; // Low night activity
 
   // Reward weekend/weekday consistency
-  const dayMultiplier = DAY_OF_WEEK_MULTIPLIERS[engagementType]?.[dayOfWeek] || 1.0;
+  const dayMultiplier = DAY_OF_WEEK_MULTIPLIERS[pt(engagementType)]?.[dayOfWeek] || 1.0;
   if ((dayOfWeek === 0 || dayOfWeek === 6) && dayMultiplier > 1.0) score += 8;
 
   // Session type affects score
@@ -272,7 +277,7 @@ function calculateHumanScore(
   if (sessionType === 'burst') score += 5;  // Bursts happen naturally
 
   // Interval randomness
-  const baseInterval = TYPE_BASE_INTERVALS[engagementType]?.min || 30;
+  const baseInterval = TYPE_BASE_INTERVALS[pt(engagementType)]?.min || 30;
   const intervalVariance = Math.abs(interval - baseInterval) / baseInterval;
   score += Math.min(intervalVariance * 15, 15);
 
@@ -413,10 +418,10 @@ export function generateOrganicSchedule(
   const warnings: string[] = [];
   let patternBreakCount = 0;
 
-  const providerMin = serviceMinimum || PROVIDER_MINIMUMS[engagementType] || 10;
-  const typeIntervalConfig = TYPE_BASE_INTERVALS[engagementType] || { min: 40, max: 100, jitter: 15, chaosMultiplier: 2.5 };
+  const providerMin = serviceMinimum || PROVIDER_MINIMUMS[pt(engagementType)] || 10;
+  const typeIntervalConfig = TYPE_BASE_INTERVALS[pt(engagementType)] || { min: 40, max: 100, jitter: 15, chaosMultiplier: 2.5 };
   let typeInterval = { min: typeIntervalConfig.min, max: typeIntervalConfig.max };
-  const typeRunSizeConfig = TYPE_RUN_SIZE[engagementType] || { min: 10, max: 50, variance: 0.4, spikeMax: 150 };
+  const typeRunSizeConfig = TYPE_RUN_SIZE[pt(engagementType)] || { min: 10, max: 50, variance: 0.4, spikeMax: 150 };
 
   // DYNAMIC SCALING: scale batch sizes for large orders
   const scaled = getScaledRunSize(engagementType, totalQuantity, providerMin);
@@ -506,7 +511,7 @@ export function generateOrganicSchedule(
   const maxRunsByMin = Math.floor(totalQuantity / providerMin);
 
   // Get type delays early (used by both small + normal modes)
-  const typeDelays = TYPE_START_DELAYS[engagementType] || { min: 5, max: 40 };
+  const typeDelays = TYPE_START_DELAYS[pt(engagementType)] || { min: 5, max: 40 };
 
   // For totals up to 25x the provider minimum, we use a denser splitting logic
   const shouldSmallQuantitySplit = maxRunsByMin >= 2 && totalQuantity < providerMin * 25;
@@ -678,8 +683,8 @@ export function generateOrganicSchedule(
     const stepMs = spanMs / (targetRuns - 1);
     const jitterMaxMs = Math.min(2 * 60 * 1000, stepMs * 0.2);
 
-    const typeDailyPattern = TYPE_DAILY_PATTERNS[engagementType] || TYPE_DAILY_PATTERNS.views;
-    const dayOfWeekPattern = DAY_OF_WEEK_MULTIPLIERS[engagementType] || DAY_OF_WEEK_MULTIPLIERS.views;
+    const typeDailyPattern = TYPE_DAILY_PATTERNS[pt(engagementType)] || TYPE_DAILY_PATTERNS.views;
+    const dayOfWeekPattern = DAY_OF_WEEK_MULTIPLIERS[pt(engagementType)] || DAY_OF_WEEK_MULTIPLIERS.views;
 
     // Build times + weights first
     const times: number[] = [];
@@ -721,7 +726,7 @@ export function generateOrganicSchedule(
 
     // Convert weights -> quantities
     const weightSum = weights.reduce((s, w) => s + w, 0) || 1;
-    const maxForTypeBase = ULTRA_MAX_PER_RUN[engagementType] || 200;
+    const maxForTypeBase = ULTRA_MAX_PER_RUN[pt(engagementType)] || 200;
     const avgNeeded = Math.ceil(totalQuantity / targetRuns);
     const maxForTimeLimit = Math.max(maxForTypeBase, Math.ceil(avgNeeded * 3));
     const minQty = providerMin;
@@ -888,13 +893,13 @@ export function generateOrganicSchedule(
   currentTime = new Date(currentTime.getTime() + initialDelay);
 
   // Get S-curve profile for this type with all chaos properties
-  const curveProfile = TYPE_CURVE_PROFILES[engagementType] || {
+  const curveProfile = TYPE_CURVE_PROFILES[pt(engagementType)] || {
     rampUpPercent: 25, peakPercent: 40, declinePercent: 35, viralChance: 0.08, dipChance: 0.10, microPauseChance: 0.08, megaSpikeChance: 0.03
   };
 
   // Get type-specific patterns
-  const typeDailyPattern = TYPE_DAILY_PATTERNS[engagementType] || TYPE_DAILY_PATTERNS.views;
-  const dayOfWeekPattern = DAY_OF_WEEK_MULTIPLIERS[engagementType] || DAY_OF_WEEK_MULTIPLIERS.views;
+  const typeDailyPattern = TYPE_DAILY_PATTERNS[pt(engagementType)] || TYPE_DAILY_PATTERNS.views;
+  const dayOfWeekPattern = DAY_OF_WEEK_MULTIPLIERS[pt(engagementType)] || DAY_OF_WEEK_MULTIPLIERS.views;
 
   // Get chaos multiplier for this type
   const chaosMultiplier = typeIntervalConfig.chaosMultiplier || 2.5;
@@ -1042,7 +1047,7 @@ export function generateOrganicSchedule(
     qty = Math.max(qty, providerMin);
 
     // Cap maximum per run
-    const maxForType = ULTRA_MAX_PER_RUN[engagementType] || scaled.max || 500;
+    const maxForType = ULTRA_MAX_PER_RUN[pt(engagementType)] || scaled.max || 500;
     qty = Math.min(qty, maxForType);
 
     // ANTI-ROUND NUMBER: Add jitter so we never land on exact multiples of 5 or 10
@@ -1143,8 +1148,8 @@ export function generateOrganicSchedule(
   // ULTRA ORGANIC: Handle remaining quantity by SPREADING across additional runs
   // Don't dump everything into last batch - that's not human-like!
   if (remaining > 0) {
-    const maxForRemaining = ULTRA_MAX_PER_RUN[engagementType] || 200;
-    const typeIntervalForRemaining = TYPE_BASE_INTERVALS[engagementType] || { min: 30, max: 90 };
+    const maxForRemaining = ULTRA_MAX_PER_RUN[pt(engagementType)] || 200;
+    const typeIntervalForRemaining = TYPE_BASE_INTERVALS[pt(engagementType)] || { min: 30, max: 90 };
 
     while (remaining > 0) {
       // Calculate batch size for remaining
@@ -1192,7 +1197,7 @@ export function generateOrganicSchedule(
     }
   }
 
-  const finalizedRuns = finalizeUniqueRuns(runs, totalQuantity, providerMin, ULTRA_MAX_PER_RUN[engagementType] || scaled.ultraMax || scaled.max || providerMin + totalQuantity);
+  const finalizedRuns = finalizeUniqueRuns(runs, totalQuantity, providerMin, ULTRA_MAX_PER_RUN[pt(engagementType)] || scaled.ultraMax || scaled.max || providerMin + totalQuantity);
 
   const totalDuration = finalizedRuns.length > 1
     ? finalizedRuns[finalizedRuns.length - 1].scheduledAt.getTime() - finalizedRuns[0].scheduledAt.getTime()
@@ -1259,8 +1264,8 @@ export function validateQuantityForProvider(
   quantity: number,
   engagementType: string
 ): { valid: boolean; error?: string } {
-  const min = PROVIDER_MINIMUMS[engagementType] || 10;
-  const max = PROVIDER_MAXIMUMS[engagementType] || 1000000;
+  const min = PROVIDER_MINIMUMS[pt(engagementType)] || 10;
+  const max = PROVIDER_MAXIMUMS[pt(engagementType)] || 1000000;
 
   if (quantity < min) {
     return { valid: false, error: `Minimum order is ${min}` };
@@ -1309,8 +1314,8 @@ export function formatDuration(ms: number): string {
  * Get estimated delivery time for display
  */
 export function getEstimatedDeliveryTime(totalQuantity: number, engagementType: string): string {
-  const typeRunSize = TYPE_RUN_SIZE[engagementType] || { min: 10, max: 50 };
-  const typeInterval = TYPE_BASE_INTERVALS[engagementType] || { min: 40, max: 100 };
+  const typeRunSize = TYPE_RUN_SIZE[pt(engagementType)] || { min: 10, max: 50 };
+  const typeInterval = TYPE_BASE_INTERVALS[pt(engagementType)] || { min: 40, max: 100 };
 
   const avgRunSize = (typeRunSize.min + typeRunSize.max) / 2;
   const avgInterval = (typeInterval.min + typeInterval.max) / 2;
@@ -1371,7 +1376,7 @@ export function generateForcedRunCountSchedule(
   serviceMinimum?: number,
   timeLimitHours?: number,
 ): FullOrganicConfig {
-  const providerMin = serviceMinimum || PROVIDER_MINIMUMS[engagementType] || 10;
+  const providerMin = serviceMinimum || PROVIDER_MINIMUMS[pt(engagementType)] || 10;
   const warnings: string[] = [];
 
   // Clamp run count: cannot exceed quantity / providerMin
@@ -1385,7 +1390,7 @@ export function generateForcedRunCountSchedule(
   }
 
   // Time window: use timeLimitHours if set, else estimate from default intervals
-  const intervalCfg = TYPE_BASE_INTERVALS[engagementType] || { min: 15, max: 60, jitter: 10, chaosMultiplier: 2 };
+  const intervalCfg = TYPE_BASE_INTERVALS[pt(engagementType)] || { min: 15, max: 60, jitter: 10, chaosMultiplier: 2 };
   const totalWindowMs = timeLimitHours && timeLimitHours > 0
     ? timeLimitHours * 60 * 60 * 1000
     : Math.max(runCount, 1) * ((intervalCfg.min + intervalCfg.max) / 2) * 60 * 1000;

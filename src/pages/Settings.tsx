@@ -61,11 +61,11 @@ export default function Settings() {
   const [isOrganicMode, setIsOrganicMode] = useState(false);
   const [ratios, setRatios] = useState({
     views: 100,
-    likes: 5,
-    comments: 2,
-    saves: 1,
-    shares: 1,
-    reposts: 0.5,
+    likes: 2.5,
+    comments: 0.1,
+    saves: 1.2,
+    shares: 1.3,
+    reposts: 1.1,
     followers: 2,
     subscribers: 3,
     watch_hours: 5,
@@ -101,7 +101,7 @@ export default function Settings() {
       if (savedOrganic) {
         const parsed = JSON.parse(savedOrganic);
         setIsOrganicMode(parsed.isOrganicMode ?? false);
-        if (parsed.ratios) setRatios(parsed.ratios);
+        if (parsed.ratios && parsed.v === 3) setRatios((r) => ({ ...r, ...parsed.ratios }));
       }
     } catch { /* ignore parse errors */ }
   }, [profile]);
@@ -164,6 +164,7 @@ export default function Settings() {
     // Save organic settings to localStorage (DB columns may not exist yet)
     try {
       localStorage.setItem('organic_settings', JSON.stringify({
+        v: 3,
         isOrganicMode,
         ratios,
       }));

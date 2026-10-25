@@ -37,7 +37,7 @@ export interface BundleItem {
   };
 }
 
-export type EngagementType = 'views' | 'likes' | 'comments' | 'saves' | 'shares' | 'followers' | 'subscribers' | 'watch_hours' | 'retweets' | 'reposts';
+export type EngagementType = `custom_${string}` | 'views' | 'likes' | 'comments' | 'custom_comments' | 'saves' | 'shares' | 'followers' | 'subscribers' | 'watch_hours' | 'retweets' | 'reposts';
 
 export type SpeedPreset = 'fast' | 'natural' | 'safe';
 
@@ -113,6 +113,7 @@ export interface EngagementConfig {
   quantity: number;
   price: number;
   serviceId: string | null;
+  serviceName?: string;
   comments?: string;
   minQuantity?: number;        // Actual service minimum from provider
   // Per-type organic settings (optional - defaults will be used if not set)
@@ -140,10 +141,11 @@ export const PLATFORM_CONFIG = {
 } as const;
 
 // Engagement type icons and colors - Muted deep colors
-export const ENGAGEMENT_CONFIG = {
+const BASE_ENGAGEMENT_CONFIG = {
   views: { icon: 'Eye', color: 'text-cyan-600', bgColor: 'bg-cyan-600/10', borderColor: 'border-cyan-600/20', label: 'Views', emoji: '👁️' },
   likes: { icon: 'Heart', color: 'text-green-600', bgColor: 'bg-green-600/10', borderColor: 'border-green-600/20', label: 'Likes', emoji: '❤️' },
   comments: { icon: 'MessageCircle', color: 'text-emerald-700', bgColor: 'bg-emerald-700/10', borderColor: 'border-emerald-700/20', label: 'Comments', emoji: '💬' },
+  custom_comments: { icon: 'MessageCircle', color: 'text-teal-600', bgColor: 'bg-teal-600/10', borderColor: 'border-teal-600/20', label: 'Custom Comments', emoji: '💬' },
   saves: { icon: 'Bookmark', color: 'text-amber-700', bgColor: 'bg-amber-700/10', borderColor: 'border-amber-700/20', label: 'Saves', emoji: '📥' },
   shares: { icon: 'Share2', color: 'text-violet-700', bgColor: 'bg-violet-700/10', borderColor: 'border-violet-700/20', label: 'Shares', emoji: '🔄' },
   followers: { icon: 'UserPlus', color: 'text-indigo-700', bgColor: 'bg-indigo-700/10', borderColor: 'border-indigo-700/20', label: 'Followers', emoji: '👥' },
@@ -154,26 +156,28 @@ export const ENGAGEMENT_CONFIG = {
 } as const;
 
 // Default engagement ratios (percentage of base views)
-export const DEFAULT_RATIOS: Record<EngagementType, number> = {
+const BASE_DEFAULT_RATIOS: Record<string, number> = {
+  // Exact defaults at 1000 views: likes 25, comments 1, saves 12, shares 13, reposts 11
   views: 100,
-  likes: 3.1,
-  comments: 0.2,
-  saves: 1.1,
+  likes: 2.5,
+  comments: 0.1,
+  custom_comments: 0.1,
+  saves: 1.2,
   shares: 1.3,
   followers: 2,
   subscribers: 3,
   watch_hours: 5,
   retweets: 4,
-  reposts: 1.3,
+  reposts: 1.1,
 };
 
 // Platform-specific engagement types
 export const PLATFORM_ENGAGEMENT_TYPES: Record<string, EngagementType[]> = {
-  instagram: ['views', 'likes', 'comments', 'saves', 'shares', 'reposts', 'followers'],
-  tiktok: ['views', 'likes', 'comments', 'saves', 'shares', 'followers'],
-  youtube: ['views', 'likes', 'comments', 'subscribers', 'watch_hours'],
-  twitter: ['views', 'likes', 'comments', 'retweets', 'followers'],
-  facebook: ['views', 'likes', 'comments', 'shares', 'followers'],
+  instagram: ['views', 'likes', 'comments', 'custom_comments', 'saves', 'shares', 'reposts', 'followers'],
+  tiktok: ['views', 'likes', 'comments', 'custom_comments', 'saves', 'shares', 'reposts', 'followers'],
+  youtube: ['views', 'likes', 'comments', 'custom_comments', 'subscribers', 'watch_hours'],
+  twitter: ['views', 'likes', 'comments', 'custom_comments', 'retweets', 'followers'],
+  facebook: ['views', 'likes', 'comments', 'custom_comments', 'shares', 'followers'],
 };
 
 // Speed presets (kept for legacy compatibility)
@@ -182,3 +186,53 @@ export const SPEED_PRESETS: Record<SpeedPreset, { interval: number; unit: 'minut
   natural: { interval: 30, unit: 'minutes', label: 'Natural' },
   safe: { interval: 60, unit: 'minutes', label: 'Safe' },
 };
+
+
+// ============= Admin-defined custom engagement types =============
+// Stored in bundle_items as engagement_type = 'custom_<slug>' with
+// custom_label + custom_icon_url. Registered at runtime so every
+// ENGAGEMENT_CONFIG[type] / DEFAULT_RATIOS[type] lookup keeps working.
+type EngCfg = { icon: string; color: string; bgColor: string; borderColor: string; label: string; emoji: string; iconUrl?: string };
+const customRegistry: Record<string, EngCfg & { ratio: number }> = {};
+
+export const isCustomEngagementType = (t: string) =>
+  t.startsWith('custom_') && t !== 'custom_comments';
+
+// Impression/reach-type custom services default to 500 per 1000 views (50%).
+export const defaultCustomRatio = (t: string) => (/impression|reach/.test(t) ? 50 : 1);
+
+export function registerCustomEngagementTypes(items: any[] | undefined | null) {
+  (items || []).forEach((it) => {
+    const t = it?.engagement_type;
+    if (!t || !isCustomEngagementType(t)) return;
+    customRegistry[t] = {
+      icon: 'Eye', color: 'text-primary', bgColor: 'bg-primary/10', borderColor: 'border-primary/20',
+      label: it.custom_label || t.replace(/^custom_/, '').replace(/_/g, ' '),
+      emoji: it.custom_icon_url ? '' : '✨',
+      iconUrl: it.custom_icon_url || undefined,
+      ratio: Number(it.ratio_percent) || defaultCustomRatio(t),
+    };
+  });
+}
+
+const fallbackCfg = (k: string): EngCfg => ({
+  icon: 'Eye', color: 'text-primary', bgColor: 'bg-primary/10', borderColor: 'border-primary/20',
+  label: k.replace(/^custom_/, '').replace(/_/g, ' '), emoji: '✨',
+});
+
+export const ENGAGEMENT_CONFIG = new Proxy(BASE_ENGAGEMENT_CONFIG as unknown as Record<string, EngCfg>, {
+  get(target, key: string) {
+    if (typeof key !== 'string') return (target as any)[key];
+    return (target as any)[key] ?? customRegistry[key] ?? (key.startsWith('custom_') ? fallbackCfg(key) : undefined);
+  },
+}) as Record<EngagementType, EngCfg>;
+
+export const DEFAULT_RATIOS = new Proxy(BASE_DEFAULT_RATIOS, {
+  get(target, key: string) {
+    if (typeof key !== 'string') return (target as any)[key];
+    return target[key] ?? customRegistry[key]?.ratio ?? (key.startsWith('custom_') ? defaultCustomRatio(key) : undefined);
+  },
+}) as Record<EngagementType, number>;
+
+export const slugifyCustomType = (label: string) =>
+  'custom_' + (label.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'service');

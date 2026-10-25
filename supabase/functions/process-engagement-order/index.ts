@@ -12,7 +12,7 @@ const corsHeaders = {
 // ============================================
 
 type ServiceCategory =
-  | 'views' | 'likes' | 'comments' | 'followers' | 'subscribers'
+  | 'views' | 'likes' | 'comments' | 'custom_comments' | 'followers' | 'subscribers'
   | 'retweets' | 'shares' | 'saves' | 'watch_hours' | 'reposts' | 'generic'
 
 interface OrganicServiceConfig {
@@ -178,6 +178,13 @@ const SERVICE_CONFIGS: Record<ServiceCategory, OrganicServiceConfig> = {
     peakHourBoost: 1.15, nightReduction: 0.10, runsPerThousand: 250,
     minRunsPerOrder: 15, maxRunsPerOrder: 150, targetHumanScore: [92, 99], defaultMinQty: 5
   },
+  custom_comments: {
+    baseIntervalMinutes: 150, intervalVariance: 80, quantityVariancePercent: 75,
+    spikeChance: 0.03, spikeMagnitude: [1.1, 1.3], dipChance: 0.40, dipMagnitude: [0.4, 0.7],
+    burstChance: 0.02, pauseChance: 0.50, patternBreakerChance: 0.40,
+    peakHourBoost: 1.15, nightReduction: 0.10, runsPerThousand: 250,
+    minRunsPerOrder: 15, maxRunsPerOrder: 150, targetHumanScore: [92, 99], defaultMinQty: 5
+  },
   followers: {
     baseIntervalMinutes: 300, intervalVariance: 150, quantityVariancePercent: 65,
     spikeChance: 0.02, spikeMagnitude: [1.1, 1.3], dipChance: 0.35, dipMagnitude: [0.45, 0.7],
@@ -248,8 +255,9 @@ const DAILY_PATTERNS: number[] = [
   1.3, 1.5, 1.6, 1.5, 1.2, 0.8,   // 6-11 PM
 ]
 
+const pt = (t: string): string => (t && t.startsWith("custom_") && t !== "custom_comments") ? "views" : t;
 function getServiceConfig(engType: string): OrganicServiceConfig {
-  return SERVICE_CONFIGS[engType as ServiceCategory] || SERVICE_CONFIGS.generic
+  return SERVICE_CONFIGS[pt(engType) as ServiceCategory] || SERVICE_CONFIGS.generic
 }
 
 const supabaseModule = createClient(
@@ -391,6 +399,9 @@ serve(async (req) => {
           if (bi.service_id && ppk > 0) {
             bundleItemPriceMap.set(bi.service_id as string, ppk)
           }
+          if (bi.engagement_type && ppk > 0) {
+            bundleItemPriceMap.set('type:' + bi.engagement_type, ppk)
+          }
         }
       }
     }
@@ -416,13 +427,13 @@ serve(async (req) => {
       }
       // Use admin-set bundle price_per_k when available, else fall back to service price.
       // Global markup is still applied on top for backward compatibility (currently 0).
-      const effectivePricePerK = bundleItemPriceMap.get(eng.service_id) ?? Number(svc.price)
+      const effectivePricePerK = bundleItemPriceMap.get('type:' + eng.type) ?? bundleItemPriceMap.get(eng.service_id) ?? Number(svc.price)
       const userPrice = (qty / 1000) * effectivePricePerK * markupMul
       eng.quantity = qty
-      eng.price = Math.round(userPrice * 10000) / 10000
+      eng.price = Math.round(userPrice * 1e8) / 1e8
       serverTotal += eng.price
     }
-    serverTotal = Math.round(serverTotal * 10000) / 10000
+    serverTotal = Math.round(serverTotal * 1e8) / 1e8
 
     // Tolerate 1% client/server rounding drift, otherwise reject
     const clientTotal = Number(total_price) || 0
@@ -578,6 +589,7 @@ serve(async (req) => {
           views: 1, impressions: 1, plays: 1, watch_hours: 1, reach: 1,
           likes: 2, favorites: 2,
           comments: 3,
+          custom_comments: 3,
           saves: 4, bookmarks: 4,
           shares: 5, retweets: 5, reposts: 5,
           followers: 6, subscribers: 6,
@@ -588,6 +600,7 @@ serve(async (req) => {
           views: { base: 0, variance: 0 },
           likes: { base: 45, variance: 30 },
           comments: { base: 90, variance: 60 },
+          custom_comments: { base: 90, variance: 60 },
           generic: { base: 30, variance: 30 }
         }
 
@@ -615,12 +628,12 @@ serve(async (req) => {
             if (s?.min_quantity) providerMin = s.min_quantity
           }
           // Enforce platform minimum floors (e.g. views must be >= 100)
-          const floorMin = PROVIDER_MINIMUMS[engType] || 0
+          const floorMin = PROVIDER_MINIMUMS[pt(engType)] || 0
           if (floorMin > 0) providerMin = Math.max(providerMin, floorMin)
 
           const isViewType = ['views', 'impressions', 'reach', 'plays', 'watch_hours'].includes(engType)
-          const stagger = platformStagger[engType] || platformStagger.generic
-          const priority = PLATFORM_PRIORITIES[engType] || 10
+          const stagger = platformStagger[pt(engType)] || platformStagger.generic
+          const priority = PLATFORM_PRIORITIES[pt(engType)] || 10
 
           let initialDelayMinutes = 0
           if (isViewType && !viewsFirstRunScheduled) {
@@ -656,9 +669,9 @@ serve(async (req) => {
 
           let baseInterval = config.baseIntervalMinutes
           let intervalRange = config.intervalVariance
-          const baseMaxBatchCap = MAX_BATCH_CAPS[engType] || MAX_BATCH_CAPS.generic
+          const baseMaxBatchCap = MAX_BATCH_CAPS[pt(engType)] || MAX_BATCH_CAPS.generic
           let maxBatchCap = Math.max(baseMaxBatchCap, Math.round(providerMin * 2.5))
-          const minIntCap = MIN_INTERVAL_CAPS[engType] || MIN_INTERVAL_CAPS.generic
+          const minIntCap = MIN_INTERVAL_CAPS[pt(engType)] || MIN_INTERVAL_CAPS.generic
 
           let idealRuns = Math.round((engagement.quantity / 1000) * config.runsPerThousand)
           const maxPosForQty = Math.max(1, Math.floor(engagement.quantity / providerMin))
