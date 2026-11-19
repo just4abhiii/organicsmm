@@ -100,17 +100,22 @@ export function interpolateCurve(
   return result;
 }
 
-// Convert drawn curve to ORGANIC delivery schedule
-// AI generates many runs following the user's curve shape with variance + randomization
+// Convert a curve (drawn or preset) to an ORGANIC delivery schedule.
+// Runs follow the curve shape; the service's own "Number of runs" setting
+// (numRunsHint > 0) and "Random variance" ±% (variancePercent) are honoured.
 export function curveToSchedule(
   points: ControlPoint[],
   type: EngagementType,
   totalQuantity: number,
   totalDurationHours: number = 24,
-  _numRunsHint: number = 20 // Ignored - AI decides optimal run count
+  numRunsHint: number = 0, // Service's forced run count; 0 = auto
+  variancePercent: number = 25, // Service's Random variance ±% per run
+  providerMinOverride?: number // Real provider/service minimum (e.g. comments min 1); falls back to the static table
 ): CurveScheduleRun[] {
-  const providerMin = PROVIDER_MINIMUMS[type] || 10;
-  
+  const providerMin = (providerMinOverride && providerMinOverride > 0)
+    ? providerMinOverride
+    : (PROVIDER_MINIMUMS[type] || 10);
+
   if (totalQuantity < providerMin) {
     return [{
       runNumber: 1,
@@ -119,10 +124,13 @@ export function curveToSchedule(
       cumulativeQuantity: totalQuantity,
     }];
   }
-  
-  // AI decides optimal number of runs based on quantity and type
-  // More quantity = more runs for organic feel
-  const optimalRunCount = calculateOptimalRunCount(type, totalQuantity, providerMin);
+
+  // Run count: the service's forced setting wins (clamped so every run can
+  // meet the provider minimum); otherwise AI decides from quantity + type.
+  const maxPossibleRuns = Math.max(1, Math.floor(totalQuantity / providerMin));
+  const optimalRunCount = numRunsHint > 0
+    ? Math.max(1, Math.min(numRunsHint, maxPossibleRuns))
+    : calculateOptimalRunCount(type, totalQuantity, providerMin);
   
   // Interpolate user's curve into many sample points (smooth curve)
   const curve = interpolateCurve(points, 200); // High resolution sampling
@@ -147,15 +155,24 @@ export function curveToSchedule(
     
     // Delta from current cumulative
     let delta = targetCumulative - cumulative;
-    
-    // Add organic variance (±15-30%)
-    const variance = 0.15 + Math.random() * 0.15;
-    const varianceAmount = Math.round(delta * variance * (Math.random() > 0.5 ? 1 : -1));
+
+    // Organic variance from the service's Random variance setting (±%).
+    // variancePercent 25 → each run can differ up to ±25% from the curve;
+    // 0 → runs follow the curve exactly. The total is never changed.
+    const vf = Math.max(0, Math.min(1, variancePercent / 100));
+    const varianceAmount = vf > 0 ? Math.round(delta * vf * (Math.random() * 2 - 1)) : 0;
     delta = Math.max(0, delta + varianceAmount);
     
     // Enforce minimum batch size
     if (delta < providerMin) {
-      if (i === timeSlots.length - 1 && remainingQuantity > 0) {
+      if (remainingQuantity < providerMin && runs.length > 0) {
+        // Short tail: merge into the previous run — providers reject
+        // sub-minimum orders, so never emit a run below the minimum.
+        runs[runs.length - 1].quantity += remainingQuantity;
+        runs[runs.length - 1].cumulativeQuantity += remainingQuantity;
+        remainingQuantity = 0;
+        break;
+      } else if (i === timeSlots.length - 1 && remainingQuantity > 0) {
         // Last run - take all remaining
         delta = remainingQuantity;
       } else if (remainingQuantity < providerMin * 2) {
@@ -209,6 +226,7 @@ function calculateOptimalRunCount(type: EngagementType, quantity: number, minBat
     views: { min: 15, max: 60 },
     likes: { min: 12, max: 45 },
     comments: { min: 8, max: 30 },
+    custom_comments: { min: 8, max: 30 },
     saves: { min: 8, max: 25 },
     shares: { min: 10, max: 35 },
   };

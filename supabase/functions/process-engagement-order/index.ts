@@ -244,8 +244,11 @@ const SERVICE_CONFIGS: Record<ServiceCategory, OrganicServiceConfig> = {
 }
 
 const PROVIDER_MINIMUMS: Record<string, number> = {
-  views: 100, likes: 10, comments: 10, saves: 10, shares: 10, followers: 10,
-  subscribers: 10, retweets: 10, reposts: 10, watch_hours: 10,
+  // Comments/reposts floor is 1: their rotation pools include min-1 services
+  // (comments 24209, S9 reposts 1294), so fallback scheduling must not batch
+  // them into 10-at-a-time runs.
+  views: 100, likes: 10, comments: 1, saves: 10, shares: 10, followers: 10,
+  subscribers: 10, retweets: 10, reposts: 1, watch_hours: 10,
 }
 
 const DAILY_PATTERNS: number[] = [
@@ -623,12 +626,17 @@ serve(async (req) => {
            console.log(`${itemTag} ▶️ scheduling attempt ${attempt}`)
           const config = getServiceConfig(engType)
           let providerMin = config.defaultMinQty
-          if (finalServiceId) {
+          // Reposts: use the lowest minimum across the provider rotation pool
+          // (same value the order page shows and validation accepts).
+          const repostRouteMin = engType === 'reposts' ? routeMinimums.get(finalServiceId) : undefined
+          if (repostRouteMin && repostRouteMin > 0) {
+            providerMin = repostRouteMin
+          } else if (finalServiceId) {
             const { data: s } = await supabase.from('services').select('min_quantity').eq('id', finalServiceId).single()
             if (s?.min_quantity) providerMin = s.min_quantity
           }
           // Enforce platform minimum floors (e.g. views must be >= 100)
-          const floorMin = PROVIDER_MINIMUMS[pt(engType)] || 0
+          const floorMin = repostRouteMin ? 0 : (PROVIDER_MINIMUMS[pt(engType)] || 0)
           if (floorMin > 0) providerMin = Math.max(providerMin, floorMin)
 
           const isViewType = ['views', 'impressions', 'reach', 'plays', 'watch_hours'].includes(engType)
@@ -655,8 +663,10 @@ serve(async (req) => {
           let peakHoursEnabled = engagement.peak_hours_enabled ?? false
           
           if (aiOrganicEnabled && timeLimitHours === 0) {
-            const options = [0, 0, 0, 4, 6, 8, 12]
-            timeLimitHours = options[Math.floor(Math.random() * options.length)]
+            // Default delivery window: 48 hours for any order left on "Auto"
+            // (was a random pick of 0/4/6/8/12h). An explicit per-service
+            // time limit always wins.
+            timeLimitHours = 48
           }
 
           // ORGANIC SYNC: Non-view engagements MUST span the same total window as views.

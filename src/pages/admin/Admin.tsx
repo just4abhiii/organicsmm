@@ -1,3 +1,4 @@
+import { AdminLegalConsentControl } from '@/components/legal/AdminLegalConsentControl';
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -250,6 +251,8 @@ export default function Admin() {
           </CardContent>
         </Card>
 
+        <AdminLegalConsentControl />
+
         {/* Queue Health Widget */}
         <QueueHealthWidget />
 
@@ -402,6 +405,22 @@ export default function Admin() {
                     <p className="text-xs text-muted-foreground">Approve Razorpay payments</p>
                   </div>
                   <ArrowUpRight className="h-4 w-4 text-muted-foreground group-hover:text-amber-500 transition-colors" />
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+
+          <Link to="/admin/abuse-reports">
+            <Card className="glass-card h-full hover:border-red-500/50 transition-all cursor-pointer group border-2 border-red-500/30">
+              <CardContent className="p-5">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-red-500/20 flex items-center justify-center">
+                    <ShieldAlert className="h-6 w-6 text-red-500" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold group-hover:text-red-500 transition-colors">Abuse Reports</h3>
+                    <p className="text-xs text-muted-foreground">Fraud complaints & URL blacklist</p>
+                  </div>
                 </div>
               </CardContent>
             </Card>

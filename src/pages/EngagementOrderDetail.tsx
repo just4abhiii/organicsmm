@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { providerRunDelivered } from "@/lib/provider-delivery";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -43,6 +44,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 // Import new components
+import { ProviderDeliveryHistory } from "@/components/engagement/ProviderDeliveryHistory";
 import { LiveStatsBoard } from "@/components/engagement/LiveStatsBoard";
 import { MergedTimeline } from "@/components/engagement/MergedTimeline";
 import { TypeHistoryCard } from "@/components/engagement/TypeHistoryCard";
@@ -587,7 +589,7 @@ export default function EngagementOrderDetail() {
 
       // Partial/in-progress where remains is meaningful
       if (run.provider_remains !== null && run.provider_remains !== undefined) {
-        return Math.max(0, run.quantity_to_send - run.provider_remains);
+        return providerRunDelivered(run);
       }
 
       // Fallback for legacy rows without provider tracking
@@ -707,7 +709,7 @@ export default function EngagementOrderDetail() {
   const terminalStatuses = new Set(['completed', 'partial', 'cancelled', 'failed']);
   let effectiveStatus = order.status as string;
   const allRunsDone = !hasActive && !hasPending;
-  if (totalOriginalQuantity > 0 && liveDelivered >= totalOriginalQuantity * 0.97) {
+  if (!hasActive && !hasPending && totalOriginalQuantity > 0 && liveDelivered >= totalOriginalQuantity * 0.97) {
     effectiveStatus = 'completed';
   } else if (allRunsDone && liveDelivered > 0 && !terminalStatuses.has(effectiveStatus) && effectiveStatus !== 'paused') {
     effectiveStatus = 'completed';
@@ -716,6 +718,8 @@ export default function EngagementOrderDetail() {
       effectiveStatus = 'processing';
     }
   }
+  // Provider has not completed every sent run yet: always show processing.
+  if (hasActive && effectiveStatus !== 'paused' && effectiveStatus !== 'cancelled') effectiveStatus = 'processing';
   const StatusIcon = STATUS_CONFIG[effectiveStatus as keyof typeof STATUS_CONFIG]?.icon || Clock;
   const statusColor = STATUS_CONFIG[effectiveStatus as keyof typeof STATUS_CONFIG]?.color || "";
   const lastUpdated = new Date(dataUpdatedAt);
@@ -825,6 +829,8 @@ export default function EngagementOrderDetail() {
           </div>
         </div>
 
+        <ProviderDeliveryHistory runs={stats.allRuns} orderNumber={order.order_number} />
+
         {/* Live Stats Board */}
         <LiveStatsBoard
           totalRuns={stats.allRuns.length}
@@ -914,8 +920,8 @@ export default function EngagementOrderDetail() {
 
               if (r.status === 'completed' || isTargetMetAutoCompleted) {
                 return sum + r.quantity_to_send;
-              } else if ((r.status === 'started' || r.status === 'failed') && r.provider_remains !== null && r.provider_remains !== undefined) {
-                return sum + Math.max(0, r.quantity_to_send - r.provider_remains);
+              } else if (r.status === 'started' || r.status === 'failed') {
+                return sum + providerRunDelivered(r);
               }
               return sum;
             }, 0);

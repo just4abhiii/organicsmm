@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { providerRunDelivered } from "@/lib/provider-delivery";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -221,7 +222,7 @@ function OrderCard({ order, onClick }: { order: any; onClick: () => void }) {
     }
     if (ps === 'completed' || ps === 'complete') return run.quantity_to_send;
     if (run.provider_remains !== null && run.provider_remains !== undefined) {
-      return Math.max(0, run.quantity_to_send - run.provider_remains);
+      return providerRunDelivered(run);
     }
     if (run.status === 'completed') return run.quantity_to_send;
     return 0;

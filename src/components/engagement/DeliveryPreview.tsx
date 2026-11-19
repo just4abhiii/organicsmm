@@ -12,8 +12,16 @@ import {
   formatDuration,
   getPeakLabel,
   FullOrganicConfig,
+  OrganicRunConfig,
   PROVIDER_MINIMUMS
 } from "@/lib/organic-algorithm";
+import {
+  buildCurveSchedule,
+  buildProportionalSyncRuns,
+  isViewLikeType,
+  DEFAULT_DELIVERY_HOURS,
+  SyncScheduleRun
+} from "@/lib/organic-sync";
 import { 
   ControlPoint, 
   curveToSchedule, 
@@ -28,6 +36,7 @@ interface DeliveryPreviewProps {
   refreshKey?: number;
   platform?: Platform;
   customCurvePoints?: Record<EngagementType, ControlPoint[]>;
+  drawModeActive?: boolean;
   onScheduleChange?: (payload: {
     schedules: FullOrganicConfig[];
     customQuantities: Record<string, number>;
@@ -43,7 +52,7 @@ interface TimelineEvent {
   peakLabel: string;
 }
 
-export function DeliveryPreview({ engagements, refreshKey = 0, platform = 'instagram', customCurvePoints, onScheduleChange }: DeliveryPreviewProps) {
+export function DeliveryPreview({ engagements, refreshKey = 0, platform = 'instagram', customCurvePoints, drawModeActive = false, onScheduleChange }: DeliveryPreviewProps) {
   const [customQuantities, setCustomQuantities] = useState<Record<string, number>>({});
 
   // Reset custom quantities when engagements, refreshKey, or curve changes
@@ -66,13 +75,13 @@ export function DeliveryPreview({ engagements, refreshKey = 0, platform = 'insta
     }
 
     const baseStartTime = new Date();
-    
-    // DELIVERY SEQUENCING: Views first, then other types with realistic delays
-    // Priority order: Views (0) → Likes → Comments → Saves → Shares → others
+
+    // DELIVERY SEQUENCING: views first, every other type follows views progress
     const TYPE_PRIORITY: Partial<Record<EngagementType, number>> = {
       views: 0,
       likes: 1,
       comments: 2,
+      custom_comments: 2,
       saves: 3,
       shares: 4,
       followers: 5,
@@ -81,126 +90,119 @@ export function DeliveryPreview({ engagements, refreshKey = 0, platform = 'insta
       retweets: 4,
       reposts: 5,
     };
-    
-    // Delay offsets from Views start (in minutes) - randomized for organic feel
-    const TYPE_DELAY_FROM_VIEWS: Partial<Record<EngagementType, { min: number; max: number }>> = {
-      views: { min: 0, max: 0 },           // Views start immediately
-      likes: { min: 15, max: 45 },         // Likes: 15-45 min after views
-      comments: { min: 30, max: 90 },      // Comments: 30-90 min after views
-      saves: { min: 45, max: 120 },        // Saves: 45-120 min after views
-      shares: { min: 35, max: 100 },       // Shares: 35-100 min after views
-      followers: { min: 60, max: 150 },    // Followers: 60-150 min after views
-      subscribers: { min: 50, max: 130 },  // Subscribers: 50-130 min after views
-      watch_hours: { min: 20, max: 60 },   // Watch hours: 20-60 min after views
-      retweets: { min: 25, max: 80 },      // Retweets: 25-80 min after views
-      reposts: { min: 30, max: 90 },       // Reposts: 30-90 min after views
-    };
-    
+
     // Sort by priority so views are processed first
-    const sortedTypes = [...enabledTypes].sort((a, b) => 
+    const sortedTypes = [...enabledTypes].sort((a, b) =>
       (TYPE_PRIORITY[a.type] ?? 10) - (TYPE_PRIORITY[b.type] ?? 10)
     );
-    
-    // Track when views actually start/end so other engagement types can follow the same window
-    let viewsStartTime = baseStartTime;
-    let viewsDurationHours = 0;
-    
-    // Generate individual schedule for each type with SEQUENCED start times
-    const schedules: FullOrganicConfig[] = sortedTypes.map(({ type, config }) => {
+
+    // Resolve per-type inputs. A type runs on its OWN independent schedule
+    // only when the user explicitly customized it (delivery time, forced run
+    // count, or a hand-drawn curve); otherwise it syncs to views progress.
+    const resolved = sortedTypes.map(({ type, config }) => {
       const rawTimeLimitHours = config.timeLimitHours ?? DEFAULT_ORGANIC_SETTINGS.timeLimitHours;
       const variancePercent = config.variancePercent ?? DEFAULT_ORGANIC_SETTINGS.variancePercent;
       const peakHoursEnabled = config.peakHoursEnabled ?? DEFAULT_ORGANIC_SETTINGS.peakHoursEnabled;
       const serviceMinimum = config.minQuantity || PROVIDER_MINIMUMS[type] || 10;
-      const isViewType = type === 'views';
-      const timeLimitHours = !isViewType && viewsDurationHours > 0
-        ? Math.max(viewsDurationHours, 0.25)
-        : rawTimeLimitHours;
-      
-      // Calculate start time based on type priority and views anchor
-      let typeStartTime: Date;
-      if (type === 'views') {
-        typeStartTime = baseStartTime;
-      } else {
-        // Anchor to views start + random delay offset
-        const delayConfig = TYPE_DELAY_FROM_VIEWS[type] ?? { min: 30, max: 90 };
-        const delayMinutes = delayConfig.min + Math.random() * (delayConfig.max - delayConfig.min);
-        typeStartTime = new Date(viewsStartTime.getTime() + delayMinutes * 60 * 1000);
-      }
-      
-      // Check if we have custom curve points for this type
       const curvePoints = customCurvePoints?.[type];
-      
-      if (curvePoints && curvePoints.length >= 2) {
-        // Use custom curve to generate schedule
-        const totalDurationHours = timeLimitHours > 0 ? timeLimitHours : 24;
-        const curveRuns = curveToSchedule(
-          curvePoints,
-          type,
-          config.quantity,
-          totalDurationHours,
-          Math.min(30, Math.max(5, Math.ceil(config.quantity / serviceMinimum)))
-        );
-        
-        // Convert curve runs to schedule format with full OrganicRunConfig properties
-        const runs = curveRuns.map((run, idx) => {
-          const timeOffset = (run.timePercent / 100) * totalDurationHours * 60 * 60 * 1000;
-          const runTime = new Date(typeStartTime.getTime() + timeOffset);
-          return {
-            scheduledAt: runTime,
-            quantity: run.quantity,
-            runNumber: run.runNumber,
-            baseQuantity: run.quantity,
-            varianceApplied: 0,
-            peakMultiplier: 1,
-            dayOfWeek: runTime.getDay(),
-            hourOfDay: runTime.getHours(),
-            sessionType: 'normal' as const,
-            humanBehaviorScore: 85,
-            patternBreaker: false,
-          };
-        });
-        
-        const totalDuration = runs.length > 1 
-          ? runs[runs.length - 1].scheduledAt.getTime() - runs[0].scheduledAt.getTime()
-          : 0;
-        
-        return {
-          engagementType: type,
-          runs,
-          totalDuration,
-          totalQuantity: config.quantity,
-          runCount: runs.length,
-          warnings: [] as string[],
-          patternBreakCount: 0,
-          avgHumanScore: 85,
-          varietyIndex: 0.8,
-        } as FullOrganicConfig;
-      }
-      
-      // Default: use organic schedule generator
-      const schedule = generateOrganicSchedule(
-        type,
-        config.quantity,
-        variancePercent,
-        peakHoursEnabled,
-        typeStartTime,
-        serviceMinimum,
-        timeLimitHours > 0 ? timeLimitHours : undefined,
-        config.runCount && config.runCount > 0 ? config.runCount : undefined
-      );
-      
-      // Capture views first run time for anchoring other types
-      if (type === 'views' && schedule.runs.length > 0) {
-        viewsStartTime = schedule.runs[0].scheduledAt;
-        const lastViewRun = schedule.runs[schedule.runs.length - 1];
-        viewsDurationHours = Math.max(
-          (lastViewRun.scheduledAt.getTime() - schedule.runs[0].scheduledAt.getTime()) / (1000 * 60 * 60),
-          0.25
-        );
-      }
-      
-      return schedule;
+      const customized =
+        rawTimeLimitHours > 0 ||
+        (config.runCount ?? 0) > 0 ||
+        (drawModeActive && (curvePoints?.length ?? 0) >= 2);
+      return { type, config, curvePoints, serviceMinimum, variancePercent, peakHoursEnabled, timeLimitHours: rawTimeLimitHours, customized };
     });
+
+    const toOrganicRuns = (runs: SyncScheduleRun[]): OrganicRunConfig[] =>
+      runs.map((run) => ({
+        scheduledAt: run.scheduledAt,
+        quantity: run.quantity,
+        runNumber: run.runNumber,
+        baseQuantity: run.quantity,
+        varianceApplied: 0,
+        peakMultiplier: 1,
+        dayOfWeek: run.scheduledAt.getDay(),
+        hourOfDay: run.scheduledAt.getHours(),
+        sessionType: 'normal' as const,
+        humanBehaviorScore: 85,
+        patternBreaker: false,
+      }));
+
+    const toFullConfig = (type: string, quantity: number, runs: SyncScheduleRun[]): FullOrganicConfig => {
+      const mapped = toOrganicRuns(runs);
+      const totalDuration = mapped.length > 1
+        ? mapped[mapped.length - 1].scheduledAt.getTime() - mapped[0].scheduledAt.getTime()
+        : 0;
+      return {
+        engagementType: type,
+        runs: mapped,
+        totalDuration,
+        totalQuantity: quantity,
+        runCount: mapped.length,
+        warnings: [] as string[],
+        patternBreakCount: 0,
+        avgHumanScore: 85,
+        varietyIndex: 0.8,
+      } as FullOrganicConfig;
+    };
+
+    // Independent per-type schedule (view-like types + explicitly customized
+    // types): warm start + selected curve over the type's window (Auto = 48h).
+    const buildIndependent = (r: (typeof resolved)[number]): FullOrganicConfig => {
+      if (r.curvePoints && r.curvePoints.length >= 2) {
+        const durationHours = r.timeLimitHours > 0 ? r.timeLimitHours : DEFAULT_DELIVERY_HOURS;
+        const runCountHint = r.config.runCount && r.config.runCount > 0
+          ? r.config.runCount
+          : Math.min(30, Math.max(5, Math.ceil(r.config.quantity / r.serviceMinimum)));
+        return toFullConfig(r.type, r.config.quantity, buildCurveSchedule({
+          points: r.curvePoints,
+          quantity: r.config.quantity,
+          providerMin: r.serviceMinimum,
+          durationHours,
+          runCount: runCountHint,
+          variancePercent: r.variancePercent,
+          startTime: baseStartTime,
+        }));
+      }
+      // Custom-draw mode before this type has a drawn curve: organic generator.
+      return generateOrganicSchedule(
+        r.type,
+        r.config.quantity,
+        r.variancePercent,
+        r.peakHoursEnabled,
+        baseStartTime,
+        r.serviceMinimum,
+        r.timeLimitHours > 0 ? r.timeLimitHours : DEFAULT_DELIVERY_HOURS,
+        r.config.runCount && r.config.runCount > 0 ? r.config.runCount : undefined
+      );
+    };
+
+    // 1) View-like types first: each gets its own warm-start curve schedule.
+    const schedules: FullOrganicConfig[] = [];
+    for (const r of resolved.filter(x => isViewLikeType(x.type))) {
+      schedules.push(buildIndependent(r));
+    }
+
+    // Anchor: the primary views runs drive every non-customized type.
+    const primaryViews = schedules.find(s => s.engagementType === 'views')
+      ?? schedules.find(s => isViewLikeType(s.engagementType));
+    const anchorRuns = (primaryViews?.runs ?? []).map(run => ({
+      scheduledAt: run.scheduledAt,
+      quantity: run.quantity,
+    }));
+
+    // 2) Non-view types: proportional sync to views unless explicitly customized.
+    for (const r of resolved.filter(x => !isViewLikeType(x.type))) {
+      if (!r.customized && anchorRuns.length > 0) {
+        schedules.push(toFullConfig(r.type, r.config.quantity, buildProportionalSyncRuns({
+          viewsRuns: anchorRuns,
+          quantity: r.config.quantity,
+          providerMin: r.serviceMinimum,
+          variancePercent: r.variancePercent,
+        })));
+      } else {
+        schedules.push(buildIndependent(r));
+      }
+    }
 
     // Merge all runs into a single timeline with unique IDs
     const allEvents: TimelineEvent[] = [];

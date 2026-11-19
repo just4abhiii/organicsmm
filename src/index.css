@@ -214,3 +214,47 @@ html {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* Binance wallet controls: isolated semantic roles, independent of payment logic. */
+:root {
+  --binance-brand: oklch(0.87 0.17 91);
+  --binance-hover: oklch(0.82 0.16 87);
+  --binance-ink: oklch(0.24 0.025 83);
+  --binance-surface: oklch(0.98 0.03 95);
+  --binance-border: oklch(0.72 0.14 86);
+  --binance-muted: oklch(0.43 0.045 82);
+  --binance-shadow: 0 6px 18px oklch(0.72 0.14 86 / 0.18);
+}
+.dark {
+  --binance-ink: oklch(0.95 0.035 91);
+  --binance-surface: oklch(0.25 0.025 83);
+  --binance-muted: oklch(0.83 0.065 90);
+}
+.wallet-payment-methods > button { min-height: 48px; }
+.wallet-payment-methods .binance-method { flex: 1 1 100%; background: var(--binance-brand); color: oklch(0.24 0.025 83); border: 2px solid var(--binance-border); font-size: 15px; font-weight: 800; gap: 8px; border-radius: 8px; box-shadow: var(--binance-shadow); }
+.wallet-payment-methods .binance-method:hover { background: var(--binance-hover); }
+.wallet-payment-methods .binance-method[aria-pressed="true"] { outline: 2px solid var(--binance-border); outline-offset: 2px; }
+.binance-funds { padding: 20px; background: hsl(var(--card)); border: 2px solid var(--binance-border); border-radius: 8px; box-shadow: var(--binance-shadow); color: var(--binance-ink); font-family: Manrope, system-ui, sans-serif; }
+.binance-funds h2, .binance-funds h3 { color: var(--binance-ink); letter-spacing: 0; }
+.binance-label { color: var(--binance-muted); font-size: 13px; font-weight: 700; letter-spacing: 0; }
+.binance-secondary { color: var(--binance-muted); }
+.binance-verified { color: hsl(var(--foreground)); background: hsl(var(--primary) / .12); padding: 8px; border-radius: 6px; }
+.binance-input { width: 100%; height: 48px; border: 2px solid var(--binance-border); border-radius: 8px; background: var(--binance-surface); color: var(--binance-ink); padding-inline: 12px; font-size: 16px; font-weight: 600; }
+.binance-input.pl-9 { padding-left: 36px; }
+.binance-input::placeholder { color: var(--binance-muted); font-weight: 400; }
+.binance-input:focus-visible, .binance-funds button:focus-visible { outline: 2px solid var(--binance-border); outline-offset: 3px; }
+.binance-funds .binance-quick { min-width: 0; height: 44px; padding: 4px; background: var(--binance-surface); color: var(--binance-ink); border-color: var(--binance-border); }
+.binance-funds .binance-quick[aria-pressed="true"], .binance-funds .binance-copy, .binance-funds .binance-submit { background: var(--binance-brand); color: oklch(0.24 0.025 83); border-color: var(--binance-border); }
+.binance-transfer { background: var(--binance-surface); border: 1px solid var(--binance-border); border-radius: 8px; padding: 14px; }
+.binance-copy-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.binance-pay-row { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--binance-border); }
+.binance-value { font-size: 20px; font-weight: 800; margin-top: 4px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; user-select: all; letter-spacing: 0; }
+.binance-funds .binance-copy { min-height: 44px; min-width: 96px; font-size: 14px; font-weight: 700; gap: 6px; }
+.binance-funds .binance-submit { min-height: 48px; font-size: 16px; font-weight: 800; gap: 8px; }
+.binance-funds .binance-copy:hover, .binance-funds .binance-submit:hover { background: var(--binance-hover); }
+.binance-request { padding: 10px; border: 1px solid var(--binance-border); border-radius: 6px; }
+@media (min-width: 640px) { .wallet-payment-methods .binance-method { flex: 1 1 0%; } .binance-funds { padding: 24px; } }
+@media (max-width: 639px) {
+  .binance-copy-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .binance-funds .binance-copy { justify-self: start; }
+}

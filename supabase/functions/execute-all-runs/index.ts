@@ -92,6 +92,7 @@ async function inlineRefreshRunStatus(supabase: SupabaseClient, run: any): Promi
 
     await supabase.from('organic_run_schedule').update({
       provider_status: providerStatus,
+      provider_response: result,
       provider_remains: Number.isFinite(remains) ? remains : run.provider_remains,
       provider_start_count: Number.isFinite(startCount) ? startCount : run.provider_start_count,
       provider_charge: Number.isFinite(charge) ? charge : run.provider_charge,
@@ -101,6 +102,7 @@ async function inlineRefreshRunStatus(supabase: SupabaseClient, run: any): Promi
     const refreshedRun = {
       ...run,
       provider_status: providerStatus,
+      provider_response: result,
       provider_remains: Number.isFinite(remains) ? remains : run.provider_remains,
       provider_start_count: Number.isFinite(startCount) ? startCount : run.provider_start_count,
       provider_charge: Number.isFinite(charge) ? charge : run.provider_charge,
@@ -1142,9 +1144,10 @@ async function processAllRuns(supabase: any, executionId: string, startTime: num
         .select(`*, engagement_order_item:engagement_order_items!organic_run_schedule_engagement_order_item_id_fkey(*, service:services(*), engagement_order:engagement_orders(*))`)
         .eq('status', 'failed')
         .lt('retry_count', 99)
+        .gte('completed_at', new Date(Date.now() - 60 * 60 * 1000).toISOString())
         .not('engagement_order_item_id', 'is', null)
         .order('completed_at', { ascending: true })
-        .limit(50),
+        .limit(10),
     ])
 
     // ==========================================
@@ -1261,6 +1264,8 @@ async function processAllRuns(supabase: any, executionId: string, startTime: num
       like: 2,
       comments: 3,
       comment: 3,
+      custom_comments: 3,
+      custom_comment: 3,
       shares: 4,
       share: 4,
       reposts: 5,
@@ -1283,15 +1288,24 @@ async function processAllRuns(supabase: any, executionId: string, startTime: num
     // Track link+type combos where ALL providers returned "active order" — only skip same type
     const activeOrderLinkTypes = new Set<string>()
 
-    // Sort by type priority BEFORE per-item cap so views win any tie for scheduling
-    const prioritizedPending = [...gatedEngagementRuns].sort((a: any, b: any) => {
-      const pa = priorityForType(a.engagement_order_item?.engagement_type)
-      const pb = priorityForType(b.engagement_order_item?.engagement_type)
-      if (pa !== pb) return pa - pb
+    // Sort: within the SAME order, views dispatch before likes/comments/etc.
+    // Across DIFFERENT orders, use strict FIFO (scheduled_at) so views don't starve likes/comments/saves
+    const compareEngagementRuns = (a: any, b: any) => {
+      const aOrderId = a.engagement_order_item?.engagement_order_id
+      const bOrderId = b.engagement_order_item?.engagement_order_id
+      if (aOrderId && bOrderId && aOrderId === bOrderId) {
+        const pa = priorityForType(a.engagement_order_item?.engagement_type)
+        const pb = priorityForType(b.engagement_order_item?.engagement_type)
+        if (pa !== pb) return pa - pb
+        return Number(a.run_number || 0) - Number(b.run_number || 0)
+      }
       const aTime = new Date(a.scheduled_at || 0).getTime()
       const bTime = new Date(b.scheduled_at || 0).getTime()
-      return aTime - bTime
-    })
+      if (aTime !== bTime) return aTime - bTime
+      return Number(a.run_number || 0) - Number(b.run_number || 0)
+    }
+
+    const prioritizedPending = [...gatedEngagementRuns].sort(compareEngagementRuns)
 
     const pendingRunsLimitedPerItem = prioritizedPending
     // Once the delivery guard closes an item's unsent rows, skip the remaining
@@ -1324,22 +1338,7 @@ async function processAllRuns(supabase: any, executionId: string, startTime: num
     })
     const retryRunsLimitedPerItem = prioritizedRetry
 
-    const allEngagementRuns = [...pendingRunsLimitedPerItem, ...retryRunsLimitedPerItem].sort((a: any, b: any) => {
-      // Views always ahead of other types in the same batch
-      const pa = priorityForType(a.engagement_order_item?.engagement_type)
-      const pb = priorityForType(b.engagement_order_item?.engagement_type)
-      if (pa !== pb) return pa - pb
-
-      // Strict FIFO within an engagement type. A previous temporary "busy"
-      // message must never push an older due run behind newer runs; otherwise
-      // the newer run repeatedly grabs the newly-free provider and the older
-      // queued run starves forever.
-      const aTime = new Date(a.scheduled_at || 0).getTime()
-      const bTime = new Date(b.scheduled_at || 0).getTime()
-      if (aTime !== bTime) return aTime - bTime
-
-      return Number(a.run_number || 0) - Number(b.run_number || 0)
-    })
+    const allEngagementRuns = [...pendingRunsLimitedPerItem, ...retryRunsLimitedPerItem].sort(compareEngagementRuns)
     console.log(`Processing ${allEngagementRuns.length} runs (${pendingRunsLimitedPerItem.length} pending + ${retryRunsLimitedPerItem.length} retry), total overdue in DB: check query`)
 
     // Do not pre-block queued runs from old "active order" errors.
@@ -1863,6 +1862,7 @@ async function processAllRuns(supabase: any, executionId: string, startTime: num
       let providerOrderId: string | null = null
       let providerResult: any = null
       let successAccount: ProviderAccount | null = null
+      let acceptedRequestedQuantity: number | null = null
       let verifiedStatus: string | null = null
       let verifiedRemains: number | null = null
       let verifiedStartCount: number | null = null
@@ -2136,6 +2136,7 @@ async function processAllRuns(supabase: any, executionId: string, startTime: num
               continue
             }
 
+            acceptedRequestedQuantity = adjustedQty
             // Persist the accepted provider order immediately. Do not make another
             // synchronous status request here: with 4-5 free mapped providers, that
             // extra call per placement exhausted the 50s scheduler window after two
@@ -2186,6 +2187,7 @@ async function processAllRuns(supabase: any, executionId: string, startTime: num
         if (postSendOrderStatus === 'cancelled' || postSendItemStatus === 'cancelled') {
           await supabase.from('organic_run_schedule').update({
             status: 'cancelled', provider_order_id: providerOrderId,
+            provider_requested_quantity: acceptedRequestedQuantity, provider_history_order_id: providerOrderId,
             provider_response: providerResult,
             provider_account_id: successAccount.id, provider_account_name: successAccount.name,
             provider_status: verifiedStatus,
@@ -2203,6 +2205,7 @@ async function processAllRuns(supabase: any, executionId: string, startTime: num
         const updatePromises = [
           supabase.from('organic_run_schedule').update({
             provider_order_id: providerOrderId, provider_response: providerResult,
+            provider_requested_quantity: acceptedRequestedQuantity, provider_history_order_id: providerOrderId,
             error_message: null, provider_account_id: successAccount.id,
             provider_account_name: successAccount.name, provider_status: verifiedStatus,
             provider_start_count: verifiedStartCount, provider_remains: verifiedRemains,
@@ -2248,28 +2251,44 @@ async function processAllRuns(supabase: any, executionId: string, startTime: num
         await updateEngagementOrderStatus(supabase, item.engagement_order_id, item.id)
       } else if (lastError !== null) {
         const retryCount = (run.retry_count || 0) + 1
-        
-        await supabase.from('organic_run_schedule').update({
-          status: 'pending', started_at: null,
-          error_message: `[Auto-retry #${retryCount}] All ${accountsToTry.length} accounts busy: ${lastError}`,
-          provider_response: {
-            ...(providerResult || {}),
-            tried_providers: triedProviderIds,
-          },
-          provider_account_id: null,
-          provider_account_name: null,
-          provider_order_id: null,
-          provider_status: null,
-          retry_count: retryCount, last_status_check: new Date().toISOString(),
-        }).eq('id', run.id)
-        skipped++
-
-        // NOTE: Batch-postponing siblings was removed — each run should get its
-        // own chance on every cron tick. If all providers are truly busy for
-        // this link+type, that run is postponed individually above and the
-        // next tick will re-evaluate provider availability.
-        results.push({ run_id: run.id, type: item.engagement_type, run_number: run.run_number, 
-          success: false, error: lastError, will_retry: true, retry_attempt: retryCount, retry_next_tick: true })
+        const MAX_RETRIES = 10
+        if (retryCount >= MAX_RETRIES) {
+          await supabase.from('organic_run_schedule').update({
+            status: 'failed', started_at: null,
+            error_message: `[Failed after ${retryCount} retries] All ${accountsToTry.length} accounts busy/error: ${lastError}`,
+            provider_response: {
+              ...(providerResult || {}),
+              tried_providers: triedProviderIds,
+            },
+            provider_account_id: null,
+            provider_account_name: null,
+            provider_order_id: null,
+            provider_status: null,
+            retry_count: 99,
+            completed_at: new Date().toISOString(),
+            last_status_check: new Date().toISOString(),
+          }).eq('id', run.id)
+          failed++
+          results.push({ run_id: run.id, type: item.engagement_type, run_number: run.run_number, 
+            success: false, error: lastError, will_retry: false, retry_attempt: retryCount, status: 'failed' })
+        } else {
+          await supabase.from('organic_run_schedule').update({
+            status: 'pending', started_at: null,
+            error_message: `[Auto-retry #${retryCount}] All ${accountsToTry.length} accounts busy: ${lastError}`,
+            provider_response: {
+              ...(providerResult || {}),
+              tried_providers: triedProviderIds,
+            },
+            provider_account_id: null,
+            provider_account_name: null,
+            provider_order_id: null,
+            provider_status: null,
+            retry_count: retryCount, last_status_check: new Date().toISOString(),
+          }).eq('id', run.id)
+          skipped++
+          results.push({ run_id: run.id, type: item.engagement_type, run_number: run.run_number, 
+            success: false, error: lastError, will_retry: true, retry_attempt: retryCount, retry_next_tick: true })
+        }
       }
 
       // Minimal delay between runs for max throughput

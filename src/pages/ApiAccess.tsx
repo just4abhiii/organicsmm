@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { PageMeta } from '@/components/seo/PageMeta';
+import { LegalConsentCheckbox, recordLegalConsent } from '@/components/legal/LegalConsent';
 import {
     Key,
     Copy,
@@ -38,12 +39,17 @@ export default function ApiAccess() {
     const { user, profile, refreshProfile } = useAuth();
     const [isGenerating, setIsGenerating] = useState(false);
     const [showKey, setShowKey] = useState(false);
+    const [legalAccepted, setLegalAccepted] = useState(false);
     const [copied, setCopied] = useState(false);
 
     const apiKey: string | null = (profile as any)?.api_key ?? null;
 
     const handleGenerateKey = async () => {
         if (!user) return;
+        if (!legalAccepted) {
+            toast.error('Please accept the legal declaration first.');
+            return;
+        }
         setIsGenerating(true);
         try {
             const newKey = generateApiKey();
@@ -54,6 +60,7 @@ export default function ApiAccess() {
 
             if (error) throw error;
             await refreshProfile();
+            recordLegalConsent('api_key', { reference: 'api_key_generated' });
             toast.success('API Key generated successfully!');
             setShowKey(true);
         } catch (err: any) {
@@ -101,6 +108,9 @@ export default function ApiAccess() {
                         <h2 className="text-base font-semibold text-white">Your API Key</h2>
                     </div>
 
+                    <LegalConsentCheckbox checked={legalAccepted} onChange={setLegalAccepted} tone="dark" />
+                    <p className="text-[11px] text-zinc-500 -mt-2">Every order placed through the API is governed by the same declaration and our Terms of Service. All API requests are logged with IP address and timestamp.</p>
+
                     {apiKey ? (
                         <div className="space-y-3">
                             <div className="flex items-center gap-2 p-4 rounded-xl bg-zinc-900 border border-white/[0.05] group">
@@ -132,7 +142,7 @@ export default function ApiAccess() {
                                 variant="outline"
                                 size="sm"
                                 onClick={handleGenerateKey}
-                                disabled={isGenerating}
+                                disabled={isGenerating || !legalAccepted}
                                 className="text-zinc-400 border-white/[0.07] hover:text-white hover:bg-white/5 hover:border-white/[0.12]"
                             >
                                 {isGenerating ? (
@@ -154,7 +164,7 @@ export default function ApiAccess() {
                             </div>
                             <Button
                                 onClick={handleGenerateKey}
-                                disabled={isGenerating}
+                                disabled={isGenerating || !legalAccepted}
                                 className="bg-violet-600 hover:bg-violet-700 text-white shadow-lg shadow-violet-600/20"
                             >
                                 {isGenerating ? (

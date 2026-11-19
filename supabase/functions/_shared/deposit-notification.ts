@@ -8,6 +8,10 @@ type DepositNotification = {
   amountInr?: number | null
   amountUsd?: number | null
   reason?: string
+  // Optional override for the admin message heading (e.g. "Binance Pay Auto-approved").
+  title?: string
+  // When true, only the admin is notified (used for manual-review alerts).
+  adminOnly?: boolean
 }
 
 function esc(value: unknown): string {
@@ -64,16 +68,17 @@ export async function notifyDepositDirect(admin: any, input: DepositNotification
   ].filter(Boolean)
 
   const results: Record<string, unknown> = {}
+  const adminTitle = input.title ?? (success ? '💰 <b>Deposit Success</b>' : '⚠️ <b>Deposit Failed</b>')
   if (adminChatId) {
     results.admin = await send(adminChatId, [
-      success ? '💰 <b>Deposit Success</b>' : '⚠️ <b>Deposit Failed</b>',
+      adminTitle,
       '', ...common,
     ].join('\n'))
   } else {
     throw new Error('TELEGRAM_CHAT_ID is not configured')
   }
 
-  if (profile?.telegram_chat_id && profile?.telegram_notifications_enabled !== false) {
+  if (!input.adminOnly && profile?.telegram_chat_id && profile?.telegram_notifications_enabled !== false) {
     results.user = await send(String(profile.telegram_chat_id), [
       success ? '✅ <b>Deposit Successful</b>' : '❌ <b>Deposit Failed</b>',
       '', ...common.slice(2),

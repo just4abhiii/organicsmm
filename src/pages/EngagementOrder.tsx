@@ -1,3 +1,5 @@
+import { useLegalConsentSetting } from '@/hooks/useLegalConsentSetting';
+import { needsLegalConsent } from '@/lib/consent-policy';
 import { useState, useMemo, useEffect, useCallback, useRef, memo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
@@ -16,9 +18,11 @@ import { PlatformSelector } from "@/components/engagement/PlatformSelector";
 import { QuantitySelector } from "@/components/engagement/QuantitySelector";
 import { EngagementTypeCard } from "@/components/engagement/EngagementTypeCard";
 import { DeliveryPreview } from "@/components/engagement/DeliveryPreview";
-import { LiveGrowthChart } from "@/components/engagement/LiveGrowthChart";
 import { DrawableGrowthChart } from "@/components/engagement/DrawableGrowthChart";
+import { CurvePresetSelector } from "@/components/engagement/CurvePresetSelector";
+import { getCurvePreset, samplePresetControlPoints, type CurvePresetId } from "@/lib/growth-curves";
 import { PageMeta } from "@/components/seo/PageMeta";
+import { LegalConsentCheckbox, recordLegalConsent } from "@/components/legal/LegalConsent";
 import {
   EngagementType,
   EngagementConfig,
@@ -32,7 +36,6 @@ import {
   ControlPoint,
   DrawModeState,
   createInitialPoints,
-  curveToSchedule,
   calculateQuantitiesFromCurve,
 } from "@/lib/curve-to-schedule";
 import { Loader2, Rocket, Link as LinkIcon, Wallet, RefreshCw, Brain, HelpCircle, ArrowDown, Sparkles, Clock, Shuffle, Shield, TrendingUp, Eye, Heart, MessageCircle, Bookmark, Share2 } from "lucide-react";
@@ -99,6 +102,9 @@ export default function EngagementOrder() {
     points: {} as Record<EngagementType, ControlPoint[]>,
   });
 
+  // Organic growth curve preset (preview simulation shape; Custom opens the draw editor)
+  const [curvePreset, setCurvePreset] = useState<CurvePresetId>('whop-v1');
+
   // Engagement configs - initialize empty, will be populated when bundle loads
   const [engagements, setEngagements] = useState<EngagementConfigs>({});
 
@@ -120,7 +126,7 @@ export default function EngagementOrder() {
       if (savedOrganic) {
         const parsed = JSON.parse(savedOrganic);
         if (typeof parsed.isOrganicMode === 'boolean') setIsOrganicMode(parsed.isOrganicMode);
-        if (parsed.ratios && parsed.v === 3) {
+        if (parsed.ratios && parsed.v === 4) {
           // Sanitize saved ratios: only finite numbers in 0..100 are allowed.
           // Views IS the base quantity — its ratio is always 100, never user-overridden.
           const clean: Record<string, number> = {};
@@ -234,6 +240,21 @@ export default function EngagementOrder() {
 
     return uniqueTypes.sort((a, b) => (PREFERRED_ORDER[a] || 99) - (PREFERRED_ORDER[b] || 99));
   }, [bundles]);
+
+  // Selected curve preset sampled into control points — this drives the REAL
+  // delivery schedule (DeliveryPreview → curveToSchedule) for every enabled
+  // type, honouring each service's time / runs / variance settings.
+  const presetCurvePoints = useMemo(() => {
+    if (curvePreset === 'custom') return undefined;
+    const preset = getCurvePreset(curvePreset);
+    const out = {} as Record<EngagementType, ControlPoint[]>;
+    activeEngagementTypes.forEach((type) => {
+      if (engagements[type]?.enabled && (engagements[type]?.quantity ?? 0) > 0) {
+        out[type] = samplePresetControlPoints(preset.shape, type);
+      }
+    });
+    return out;
+  }, [curvePreset, activeEngagementTypes, engagements]);
 
   // Base per-type quantities (used as "100%" reference for draw-mode scaling)
   // Use debounced value for expensive calculations
@@ -383,6 +404,8 @@ export default function EngagementOrder() {
       uniqueBundleTypes.forEach((type) => {
         // If auto-ratios is OFF, only enable 'views' by default
         // Reach/Impressions is the most expensive add-on: OFF by default, user opts in.
+        // (A 0% ratio also keeps a type off — applied at the enabled flag below,
+        // after ratioPercent is computed.)
         const isEnabledByDefault = (isAutoRatios || type === 'views') && !/impression|reach/i.test(type);
 
         // Use user's custom ratio if available from localStorage, else fallback to default
@@ -393,9 +416,13 @@ export default function EngagementOrder() {
 
         const serviceData = servicePrices[type];
 
-        // Respect user's base quantity exactly — no auto bump to provider minimum.
-        // If it's below provider min, the per-card warning will appear.
-        const quantity = ratioQuantity;
+        // Provider minimums are hard limits: clamp auto-computed ratio
+        // quantities UP to the rotation-pool minimum so every enabled type
+        // stays deliverable at any base quantity. Table proportions apply
+        // exactly whenever they are above the minimum. User-edited
+        // quantities are never touched (the per-card warning covers those).
+        const poolMin = serviceData?.minQuantity ?? 0;
+        const quantity = ratioQuantity > 0 && poolMin > 0 ? Math.max(ratioQuantity, poolMin) : ratioQuantity;
 
         const isCustomComment = type === 'custom_comments' || (
           type === 'comments' &&
@@ -414,7 +441,7 @@ export default function EngagementOrder() {
 
         updated[type] = {
           type,
-          enabled: prev[type] ? prev[type].enabled : isEnabledByDefault,
+          enabled: prev[type] ? prev[type].enabled : (isEnabledByDefault && ratioPercent > 0),
           quantity: finalQuantity,
           price: finalPrice,
           comments: prev[type]?.comments ?? '',
@@ -498,6 +525,22 @@ export default function EngagementOrder() {
     setPreviewRefreshKey(k => k + 1);
   }, []);
 
+  // Curve preset selection — Custom enables the draw editor, presets are preview shapes
+  const handleCurvePresetChange = useCallback((id: CurvePresetId) => {
+    setCurvePreset(id);
+    if (id === 'custom') {
+      const firstDrawable = (['views', 'likes', 'comments', 'saves', 'shares'] as EngagementType[])
+        .find(t => engagements[t]?.enabled && (engagements[t]?.quantity ?? 0) > 0);
+      setDrawModeState(prev => ({
+        ...prev,
+        isEnabled: true,
+        activeType: prev.activeType ?? firstDrawable ?? 'views',
+      }));
+    } else {
+      setDrawModeState(prev => (prev.isEnabled ? { ...prev, isEnabled: false } : prev));
+    }
+  }, [engagements]);
+
   const handleScheduleChange = useCallback((payload: {
     schedules: FullOrganicConfig[];
     customQuantities: Record<string, number>;
@@ -536,6 +579,8 @@ export default function EngagementOrder() {
   }, [engagements]);
 
   // Place order mutation
+  const [legalAccepted, setLegalAccepted] = useState(false);
+  const { enabled: legalConsentEnabled } = useLegalConsentSetting();
   const placeOrderMutation = useMutation({
     mutationFn: async () => {
       if (!user) throw new Error('Not authenticated');
@@ -657,6 +702,7 @@ export default function EngagementOrder() {
       return data;
     },
     onSuccess: (data) => {
+      if (legalConsentEnabled && legalAccepted) recordLegalConsent('order', { reference: `order#${data?.order_number ?? ''} ${link.trim()}`.slice(0, 200) });
       toast({
         title: "🚀 Order Placed!",
         description: `Order #${data.order_number} created. ${formatPrice(totalPrice)} deducted.`,
@@ -706,6 +752,15 @@ export default function EngagementOrder() {
       toast({
         title: "Loading...",
         description: "Please wait while services load.",
+      });
+      return;
+    }
+
+    if (needsLegalConsent(legalConsentEnabled, legalAccepted)) {
+      toast({
+        title: "Legal Consent Required",
+        description: "Please tick the legal declaration checkbox above the Place Order button.",
+        variant: "destructive",
       });
       return;
     }
@@ -999,7 +1054,7 @@ export default function EngagementOrder() {
                   baseQuantity={baseQuantity}
                   onChange={(config) => handleEngagementChange(type, config)}
                   minQuantity={engagements[type]?.minQuantity}
-                  customCurvePoints={drawModeState.isEnabled ? drawModeState.points[type] : undefined}
+                  customCurvePoints={drawModeState.isEnabled ? drawModeState.points[type] : presetCurvePoints?.[type]}
                   pricePerK={servicePrices[type]?.pricePerK}
                   previewSchedule={previewSchedules[type]}
                 />
@@ -1008,24 +1063,19 @@ export default function EngagementOrder() {
           </div>
         </div>
 
-        {/* Drawable Growth Chart - Interactive curve editing */}
+        {/* Organic Growth Curve System — the selected curve shapes the real delivery schedule */}
         {activeEngagementTypes.length > 0 && (
-          <DrawableGrowthChart
-            engagements={engagements as Record<EngagementType, EngagementConfig>}
-            onCurveChange={handleCurveChange}
-            drawModeState={drawModeState}
-            onDrawModeChange={setDrawModeState}
-          />
-        )}
-
-        {/* Live Growth Chart - Real-time visualization (shown when not drawing) */}
-        {!drawModeState.isEnabled && activeEngagementTypes.length > 0 && (
-          <LiveGrowthChart
-            engagements={engagements as Record<EngagementType, EngagementConfig>}
-            refreshKey={previewRefreshKey}
-            onRefresh={() => setPreviewRefreshKey(k => k + 1)}
-            platform={platform as 'instagram' | 'tiktok' | 'youtube' | 'twitter' | 'facebook'}
-          />
+          <>
+            <CurvePresetSelector selected={curvePreset} onSelect={handleCurvePresetChange} />
+            {curvePreset === 'custom' && (
+              <DrawableGrowthChart
+                engagements={engagements as Record<EngagementType, EngagementConfig>}
+                onCurveChange={handleCurveChange}
+                drawModeState={drawModeState}
+                onDrawModeChange={setDrawModeState}
+              />
+            )}
+          </>
         )}
 
         {/* Delivery Timeline Preview - Detailed schedule */}
@@ -1034,7 +1084,8 @@ export default function EngagementOrder() {
             engagements={engagements as Record<EngagementType, EngagementConfig>}
             refreshKey={previewRefreshKey}
             platform={platform as 'instagram' | 'tiktok' | 'youtube' | 'twitter' | 'facebook'}
-            customCurvePoints={drawModeState.isEnabled ? drawModeState.points : undefined}
+            customCurvePoints={drawModeState.isEnabled ? drawModeState.points : presetCurvePoints}
+            drawModeActive={drawModeState.isEnabled}
             onScheduleChange={handleScheduleChange}
           />
         )}
@@ -1042,6 +1093,9 @@ export default function EngagementOrder() {
         {/* Order Summary - Compact on mobile */}
         <Card className="glass-card border-2 border-primary/40 bg-gradient-to-br from-primary/5 via-transparent to-primary/10 overflow-hidden">
           <CardContent className="p-4 sm:p-6">
+            {legalConsentEnabled && <div className="mb-4">
+              <LegalConsentCheckbox checked={legalAccepted} onChange={setLegalAccepted} />
+            </div>}
             <div className="flex flex-col gap-4 sm:gap-5 lg:flex-row lg:items-center lg:justify-between">
               <div className="space-y-1 sm:space-y-2">
                 <div className="flex items-baseline gap-2">
@@ -1069,7 +1123,7 @@ export default function EngagementOrder() {
                 <Button
                   size="lg"
                   onClick={handlePlaceOrder}
-                  disabled={!link.trim() || placeOrderMutation.isPending || bundlesLoading}
+                  disabled={!link.trim() || placeOrderMutation.isPending || bundlesLoading || needsLegalConsent(legalConsentEnabled, legalAccepted)}
                   className="h-12 sm:h-14 px-6 sm:px-8 text-base sm:text-lg font-bold rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 shadow-lg shadow-primary/25 transition-all duration-300"
                 >
                   {placeOrderMutation.isPending ? (

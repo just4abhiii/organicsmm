@@ -1,165 +1,42 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { tgCall, tgWebhookSecret } from "../_shared/telegram.ts";
-
-
-const supabase = createClient(
-  Deno.env.get("SUPABASE_URL") ?? "",
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-);
-
-function safeEqual(a: string | null, b: string): boolean {
-  if (!a || a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
+import {createClient} from 'https://esm.sh/@supabase/supabase-js@2';
+import {serve} from 'https://deno.land/std@0.168.0/http/server.ts';
+import {tgCall,tgWebhookSecret,tgConfigured} from '../_shared/telegram.ts';
+const db=createClient(Deno.env.get('SUPABASE_URL')??'',Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')??'');
+function equal(a:string|null,b:string){if(!a||a.length!==b.length)return false;let diff=0;for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^b.charCodeAt(i);return diff===0;}
+const MENU = {keyboard:[[{text:'💰 Live Balance'},{text:'📊 Top-up Plan'}],[{text:'🏠 Menu'}]],resize_keyboard:true,is_persistent:true};
+const esc = x => String(x??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+function action(text){const t=String(text??'').trim().toLowerCase().split(/\s/)[0].split('@')[0];if(['/bal','/balance','/balances','/b','💰'].includes(t))return'balance';if(['/plan','📊'].includes(t))return'plan';if(['/start','/help','🏠'].includes(t))return'menu';return'unknown';}
+// Kept identical to the OrganicSMM webhook guard.
+function hasReportText(message) {
+  return typeof message?.text === 'string' && message.text.length <= 4096;
 }
 
-async function tg(path: string, body: Record<string, unknown>) {
-  return await tgCall(path, body);
+function allowed(chat,raw){const ids=String(raw??'').split(/[\s,]+/).filter(Boolean);return ids.length>0&&ids.includes(String(chat));}
+function genuinelyUnsent(r){return r.status==='pending'&&!r.provider_order_id&&!r.provider_history_order_id&&!r.started_at&&!r.uncertain_dispatch&&!/dispatch uncertain|dispatching|uncertain.dispatch|claimed/i.test(r.error_message??'');}
+function toInr(balance,currency,rates){if(balance===null||balance===undefined||String(balance).trim()==='')return null;const n=Number(balance),rate=Number(rates?.[String(currency??'').toUpperCase()]);return Number.isFinite(n)&&n>=0&&Number.isFinite(rate)&&rate>0?n/rate:null;}
+function deficit(cost,balance){return Number.isFinite(cost)&&Number.isFinite(balance)?Math.max(0,cost-balance):null;}
+async function bounded(fn,ms=35000){const controller=new AbortController();let timer;try{return await Promise.race([fn(controller.signal),new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Error('Report timed out. Please refresh.'));},ms);})]);}finally{clearTimeout(timer);}}
+async function providerCall(account,actionName,signal){try{const url=new URL(account.api_url);if(!['https:','http:'].includes(url.protocol)||!account.api_key)throw Error();const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({key:account.api_key,action:actionName}),signal:AbortSignal.any([signal,AbortSignal.timeout(9000)])});if(!res.ok)throw Error();const d=await res.json();if(d?.error)throw Error();return d;}catch{return null;}}
+async function workers(items,fn){const out=new Array(items.length);let i=0;await Promise.all(Array.from({length:Math.min(items.length,4)},async()=>{while(i<items.length){const j=i++;out[j]=await fn(items[j]);}}));return out;}
+async function collect(snapshot,mode,site,signal){
+ let rates={INR:1};try{const res=await fetch('https://open.er-api.com/v6/latest/INR',{signal:AbortSignal.any([signal,AbortSignal.timeout(6000)])});if(res.ok){const d=await res.json();if(d.result==='success')rates=d.rates;}}catch{}
+ const results=await workers(snapshot.accounts.filter(a=>a.is_active),async acc=>{const[b,services]=await Promise.all([providerCall(acc,'balance',signal),mode==='plan'?providerCall(acc,'services',signal):Promise.resolve(null)]);const currency=String(b?.currency??b?.Currency??'').toUpperCase();const balance=toInr(b?.balance??b?.Balance,currency,rates);return{account:acc,currency,balance,services:Array.isArray(services)?services:null};});
+ const rows=results.map(x=>({id:x.account.id,provider_name:x.account.name||x.account.provider_id,pending_runs:0,pending_quantity:0,verified_cost_inr:0,balance_inr:x.balance,topup_inr:0,unpriced_runs:0,provisional_runs:0,complete:x.balance!==null,services:[]}));const byId=new Map(rows.map(r=>[r.id,r]));const live=new Map(results.map(r=>[r.account.id,r]));const missing={id:'unassigned',provider_name:'Unassigned / Unpriced',pending_runs:0,pending_quantity:0,verified_cost_inr:0,balance_inr:null,topup_inr:null,unpriced_runs:0,provisional_runs:0,complete:false,services:[]};
+ if(mode==='plan')for(const work of snapshot.work){if(!genuinelyUnsent(work))continue;const svc=snapshot.services.find(s=>s.id===work.service_id);let candidates=snapshot.mappings.filter(m=>m.service_id===work.service_id&&m.is_active&&live.has(m.provider_account_id)).sort((a,b)=>Number(a.sort_order)-Number(b.sort_order));if(!candidates.length&&svc)candidates=results.filter(x=>x.account.provider_id===svc.provider_id).sort((a,b)=>Number(a.account.priority)-Number(b.account.priority)).map(x=>({provider_account_id:x.account.id,provider_service_id:svc.provider_service_id}));const explicit=work.provider_account_id?candidates.find(m=>m.provider_account_id===work.provider_account_id):null;const chosen=explicit??candidates[0];const provisional=!explicit&&candidates.length>1;const row=chosen?byId.get(chosen.provider_account_id):missing;const count=Number(work.run_count)||1;row.pending_runs+=count;row.pending_quantity+=Number(work.quantity)||0;
+ const data=chosen?live.get(chosen.provider_account_id):null;const upstream=data?.services?.find(s=>String(s.service)===String(chosen.provider_service_id));let quantity=Number(work.quantity);const minimum=Number(upstream?.min),maximum=Number(upstream?.max),rate=Number(upstream?.rate);let valid=Number.isFinite(quantity)&&quantity>0&&Number.isFinite(rate)&&rate>=0&&upstream?.rate!==''&&upstream?.rate!=null&&Number.isFinite(minimum)&&minimum>0;
+ if(site==='OrganicSMM'){const multiplier=Math.max(Number(data?.account.delivery_multiplier)||1,0.5);if(quantity<minimum)valid=false;quantity=multiplier>1?Math.max(minimum,Math.max(1,Math.round(quantity/multiplier))):quantity;}else quantity=Math.max(quantity,Number(svc?.min_quantity)||0);
+ if(quantity<minimum||(Number.isFinite(maximum)&&maximum>0&&quantity>maximum))valid=false;
+ const cost=valid?toInr(quantity*rate/1000,data?.currency,rates):null;
+ if(cost===null||provisional){row.unpriced_runs+=count;row.complete=false;if(provisional)row.provisional_runs+=count;}else row.verified_cost_inr+=cost;
+ row.services.push({service_name:svc?.name||'Missing service mapping',pending_runs:count,pending_quantity:Number(work.quantity)||0,cost_inr:cost===null||provisional?null:cost});}
+ if(missing.pending_runs)rows.push(missing);
+ for(const row of rows){row.topup_inr=row.complete?deficit(row.verified_cost_inr,row.balance_inr):null;}
+ return{site,mode,generated_at:new Date().toISOString(),complete:rows.every(r=>r.complete),rows,total_balance_inr:rows.reduce((n,r)=>n+(r.balance_inr??0),0),total_cost_inr:rows.reduce((n,r)=>n+r.verified_cost_inr,0),total_topup_inr:rows.reduce((n,r)=>n+(r.topup_inr??0),0),pending_runs:rows.reduce((n,r)=>n+r.pending_runs,0),unpriced_runs:rows.reduce((n,r)=>n+r.unpriced_runs,0)};
 }
+function reportParts(report,url){const money=x=>x===null?'Unavailable':`₹${x.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;const title=`${report.mode==='plan'?'📊 Top-up Plan':'💰 Live Provider Balances'} — <b>${esc(report.site)}</b>`;const footer=`━━━━━━━━━━━━━━\nVerified balance total: <b>${money(report.total_balance_inr)}</b>${report.mode==='plan'?`\nVerified cost subtotal: ${money(report.total_cost_inr)}\n${report.complete?'Required top-up':'Verified provider deficits subtotal'}: <b>${money(report.total_topup_inr)}</b>`:''}\n${report.complete?'✅ Complete snapshot':'⚠️ Incomplete — unavailable providers are not zero. Do not fund using this as a final total.'}\n🕘 ${esc(new Date(report.generated_at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'}))} IST\n<a href="${esc(url)}">Website par full report ↗️</a>`;const blocks=report.rows.map(r=>`${r.balance_inr===null?'⚠️':'🟢'} <b>${esc(String(r.provider_name).slice(0,160))}</b>\n💰 Balance: ${money(r.balance_inr)}${report.mode==='plan'?`\nPending runs: ${r.pending_runs}\nVerified cost: ${money(r.verified_cost_inr)}\nRequired top-up: ${r.topup_inr===null?'Incomplete':money(r.topup_inr)}${r.unpriced_runs?`\n⚠️ Unpriced: ${r.unpriced_runs} runs${r.provisional_runs?' (provider assignment not final)':''}`:''}`:''}`);const parts=[];let current=title+'\n━━━━━━━━━━━━━━';for(const block of blocks){if((current+'\n\n'+block).length>3200){parts.push(current);current=title+' (continued)';}current+='\n\n'+block;}if((current+'\n\n'+footer).length>3800){parts.push(current);current=title;}parts.push(current+'\n\n'+footer);return parts;}
+async function runCommand({text,chatId,send,snapshot,site,url}){const mode=action(text);if(mode==='menu'||mode==='unknown'){await send(chatId,`🏠 <b>${esc(site)} Admin Menu</b>\n━━━━━━━━━━━━━━\n💰 Live Balance\n📊 Top-up Plan`,MENU);return;}await send(chatId,`⏳ <b>${esc(site)}</b> — checking fresh provider data…`,MENU);try{const result=await bounded(async signal=>collect(await snapshot(signal),mode,site,signal));for(const part of reportParts(result,url))await send(chatId,part,MENU);}catch{await send(chatId,'⚠️ Report unavailable or timed out. Please tap the report button to refresh.',MENU);}}
 
-async function getUsdToInr(): Promise<number> {
-  try {
-    const r = await fetch("https://api.exchangerate-api.com/v4/latest/USD");
-    const j = await r.json();
-    const rate = Number(j?.rates?.INR);
-    if (rate > 0) return rate;
-  } catch (_) { /* ignore */ }
-  return 84;
-}
+async function organicSnapshot(db:any,signal:AbortSignal){const run=async(q:any)=>{const{data,error}=await q.abortSignal(signal);if(error)throw Error('Snapshot unavailable');return data||[];};const[accounts,services,mappings,work]=await Promise.all([run(db.from('provider_accounts').select('id,provider_id,name,api_url,api_key,is_active,priority,last_used_at,delivery_multiplier').eq('is_active',true)),run(db.from('services').select('id,provider_id,provider_service_id,name,min_quantity')),run(db.from('service_provider_mapping').select('service_id,provider_account_id,provider_service_id,sort_order,is_active').eq('is_active',true)),run(db.rpc('admin_bot_work_snapshot'))]);return{accounts,services,mappings,work};}
+async function organicReport(db:any){return bounded(async(signal:AbortSignal)=>collect(await organicSnapshot(db,signal),'plan','OrganicSMM',signal));}
 
-async function fetchLiveBalances(chatId: number) {
-  const { data: accounts, error } = await supabase
-    .from("provider_accounts")
-    .select("id,name,api_url,api_key,balance_currency,is_active")
-    .eq("is_active", true)
-    .order("name");
-
-  if (error) {
-    await tg("sendMessage", { chat_id: chatId, text: `❌ DB error: ${error.message}` });
-    return;
-  }
-  if (!accounts?.length) {
-    await tg("sendMessage", { chat_id: chatId, text: "⚠️ No active provider accounts found." });
-    return;
-  }
-
-  await tg("sendMessage", { chat_id: chatId, text: `🔄 Checking <b>${accounts.length}</b> providers...`, parse_mode: "HTML" });
-
-  const usdToInr = await getUsdToInr();
-  const results = await Promise.all(accounts.map(async (acc: any) => {
-    try {
-      const fd = new URLSearchParams();
-      fd.append("key", acc.api_key);
-      fd.append("action", "balance");
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 12000);
-      const resp = await fetch(acc.api_url, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: fd.toString(),
-        signal: ctrl.signal,
-      });
-      clearTimeout(t);
-      const text = await resp.text();
-      let data: any;
-      try { data = JSON.parse(text); } catch { data = { error: text }; }
-      if (data.error) {
-        await supabase.from("provider_accounts").update({
-          balance_checked_at: new Date().toISOString(),
-          last_balance_error: typeof data.error === "string" ? data.error : JSON.stringify(data.error),
-        }).eq("id", acc.id);
-        return { name: acc.name, error: String(data.error).slice(0, 80) };
-      }
-      const balance = parseFloat(data.balance ?? "0");
-      const currency = (data.currency ?? acc.balance_currency ?? "USD").toUpperCase();
-      await supabase.from("provider_accounts").update({
-        balance, balance_currency: currency,
-        balance_checked_at: new Date().toISOString(),
-        last_balance_error: null,
-      }).eq("id", acc.id);
-      const inr = currency === "USD" ? balance * usdToInr : balance;
-      return { name: acc.name, balance, currency, inr };
-    } catch (e: any) {
-      return { name: acc.name, error: e.message || "Network error" };
-    }
-  }));
-
-  let totalInr = 0;
-  const lines = results.map((r: any) => {
-    if (r.error) return `❌ <b>${r.name}</b>\n   <i>${r.error}</i>`;
-    totalInr += r.inr;
-    const emoji = r.inr < 50 ? "🔴" : r.inr < 200 ? "🟡" : "🟢";
-    return `${emoji} <b>${r.name}</b>\n   ₹${r.inr.toFixed(2)}`;
-  });
-
-  const msg = `💰 <b>Provider Balances</b>\n\n${lines.join("\n\n")}\n\n━━━━━━━━━━━━━━\n<b>Total: ₹${totalInr.toFixed(2)}</b>\n<i>Updated: ${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</i>`;
-  await tg("sendMessage", { chat_id: chatId, text: msg, parse_mode: "HTML" });
-}
-
-async function handleCommand(cmd: string, chatId: number) {
-  const c = cmd.toLowerCase().split("@")[0].trim();
-  if (c === "/balance" || c === "/bal" || c === "/balances") {
-    await fetchLiveBalances(chatId);
-  } else if (c === "/start" || c === "/help") {
-    await tg("sendMessage", {
-      chat_id: chatId,
-      parse_mode: "HTML",
-      text: `👋 <b>Organic SMM Admin Bot</b>\n\nAvailable commands:\n\n/balance - Check live balance of all providers\n/help - Show this message`,
-    });
-  } else {
-    await tg("sendMessage", {
-      chat_id: chatId,
-      text: `❓ Unknown command. Send /help for available commands.`,
-    });
-  }
-}
-
-serve(async (req) => {
-  if (req.method === "GET") {
-    return new Response(JSON.stringify({ ok: true, service: "telegram-webhook" }), {
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-  if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
-
-  const expected = await tgWebhookSecret();
-  const actual = req.headers.get("X-Telegram-Bot-Api-Secret-Token");
-  if (!safeEqual(actual, expected)) {
-    return new Response("Unauthorized", { status: 401 });
-  }
-
-  const update = await req.json().catch(() => null);
-  const message = update?.message ?? update?.edited_message;
-  const chatId = message?.chat?.id;
-  const text: string = message?.text ?? "";
-
-  if (!chatId || !text) {
-    return new Response(JSON.stringify({ ok: true, ignored: true }), {
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  // Only allow the configured admin chat
-  const ALLOWED = Deno.env.get("TELEGRAM_CHAT_ID");
-  if (ALLOWED && String(chatId) !== String(ALLOWED)) {
-    await tg("sendMessage", { chat_id: chatId, text: "⛔ Unauthorized chat." });
-    return new Response(JSON.stringify({ ok: true, unauthorized_chat: true }), {
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  try {
-    if (text.startsWith("/")) {
-      await handleCommand(text, chatId);
-    }
-  } catch (e: any) {
-    console.error("handler error", e);
-    await tg("sendMessage", { chat_id: chatId, text: `❌ Error: ${e.message}` });
-  }
-
-  return new Response(JSON.stringify({ ok: true }), {
-    headers: { "Content-Type": "application/json" },
-  });
-});
+serve(async(req)=>{if(req.method==='OPTIONS')return new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':'https://organicsmm.online','Access-Control-Allow-Headers':'authorization,x-client-info,apikey,content-type'}});if(req.headers.get('Authorization')?.startsWith('Bearer ')){const token=req.headers.get('Authorization')?.replace(/^Bearer /,'');const{data:{user},error}=await db.auth.getUser(token);if(error||!user)return new Response('Unauthorized',{status:401});const{data:role}=await db.from('user_roles').select('role').eq('user_id',user.id).eq('role','admin').maybeSingle();if(!role)return new Response('Forbidden',{status:403});try{return Response.json(await organicReport(db),{headers:{'Access-Control-Allow-Origin':'https://organicsmm.online','Cache-Control':'no-store'}});}catch{return Response.json({error:'Report unavailable or timed out. Please refresh.'},{status:503,headers:{'Access-Control-Allow-Origin':'https://organicsmm.online'}});}};if(req.method==='GET')return Response.json({ok:true,service:'telegram-webhook'});if(req.method!=='POST')return new Response('Method not allowed',{status:405});if(!tgConfigured()||!equal(req.headers.get('X-Telegram-Bot-Api-Secret-Token'),await tgWebhookSecret()))return new Response('Unauthorized',{status:401});const u=await req.json().catch(()=>null);const m=u?.message??u?.edited_message,chat=m?.chat?.id;const raw=[Deno.env.get('TELEGRAM_CHAT_ID'),Deno.env.get('TELEGRAM_ADMIN_CHAT_ID')].filter(Boolean).join(',');if(!allowed(chat,raw))return Response.json({ok:true,ignored:true});if(!Number.isSafeInteger(u?.update_id)||u.update_id<0)return new Response('Invalid update',{status:400});if(!hasReportText(m))return Response.json({ok:true,ignored:true});const {data,error}=await db.from('admin_bot_updates').upsert({update_id:u.update_id},{onConflict:'update_id',ignoreDuplicates:true}).select('update_id').abortSignal(AbortSignal.timeout(4000));if(error)return new Response('Temporarily unavailable',{status:503});if(!data?.length)return Response.json({ok:true,duplicate:true});const task=async()=>{try{const send=async(chat_id:any,text:string,reply_markup:any)=>{let timer:any;try{await Promise.race([tgCall('sendMessage',{chat_id,text,parse_mode:'HTML',reply_markup,disable_web_page_preview:true}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Telegram timeout')),10000);})]);}finally{clearTimeout(timer);}};await runCommand({text:m.text,chatId:chat,send,snapshot:(signal:AbortSignal)=>organicSnapshot(db,signal),site:'OrganicSMM',url:'https://organicsmm.online/admin/topup-plan'});await db.from('admin_bot_updates').update({processed_at:new Date().toISOString(),status:'processed'}).eq('update_id',u.update_id);}catch{console.error('admin-bot processing unavailable');}};EdgeRuntime.waitUntil(task());return Response.json({ok:true});});

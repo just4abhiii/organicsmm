@@ -157,18 +157,23 @@ const BASE_ENGAGEMENT_CONFIG = {
 
 // Default engagement ratios (percentage of base views)
 const BASE_DEFAULT_RATIOS: Record<string, number> = {
-  // Exact defaults at 1000 views: likes 25, comments 1, saves 12, shares 13, reposts 11
+  // Defaults follow Ahsan's organic distribution table, scaled from the
+  // 10,000-views row to any base quantity: likes 3.2%, comments 0.12%,
+  // shares 0.3%, reposts 0.12%, saves 0.27% (10k → 320/12/30/12/27).
+  // Provider minimums still apply: the order page clamps smaller computed
+  // quantities UP to the rotation-pool minimum so every type stays
+  // deliverable at low base quantities.
   views: 100,
-  likes: 2.5,
-  comments: 0.1,
-  custom_comments: 0.1,
-  saves: 1.2,
-  shares: 1.3,
+  likes: 3.2,
+  comments: 0.12,
+  custom_comments: 0.12,
+  saves: 0.27,
+  shares: 0.3,
   followers: 2,
   subscribers: 3,
   watch_hours: 5,
   retweets: 4,
-  reposts: 1.1,
+  reposts: 0.12,
 };
 
 // Platform-specific engagement types

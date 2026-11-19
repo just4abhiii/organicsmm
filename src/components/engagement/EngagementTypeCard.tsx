@@ -60,7 +60,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
 };
 
 const TIME_PRESETS = [
-  { value: 0, label: 'Auto' },
+  { value: 0, label: 'Auto (48h)' },
   { value: 6, label: '6h' },
   { value: 12, label: '12h' },
   { value: 24, label: '24h' },
@@ -160,7 +160,7 @@ export function EngagementTypeCard({
     // For custom mode, use the actual timeLimitHours value (already stored in config)
     // For preset modes, use timeLimitHours directly
     const effectiveTimeLimit = timeLimitHours;
-    const durationHoursForCurve = effectiveTimeLimit > 0 ? effectiveTimeLimit : 24;
+    const durationHoursForCurve = effectiveTimeLimit > 0 ? effectiveTimeLimit : 48; // Auto = 48h default delivery window
     const timeLimitArg = effectiveTimeLimit > 0 ? effectiveTimeLimit : undefined;
     const startTime = new Date();
 

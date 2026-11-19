@@ -139,12 +139,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!isMounted) return;
 
         const session = result?.data?.session ?? null;
-        setSession(session);
-        setUser(session?.user ?? null);
-
         if (session?.user) {
-          // Profile/wallet/role background me load karo — inke liye UI block nahi hoga
-          void fetchUserData(session.user.id);
+          const { error: userError } = await supabase.auth.getUser();
+          if (userError) {
+            console.warn('Session token invalid or expired, resetting:', userError.message);
+            try { await supabase.auth.signOut(); } catch (_) {}
+            if (isMounted) {
+              setSession(null);
+              setUser(null);
+              setProfile(null);
+              setWallet(null);
+              setRole(null);
+            }
+          } else {
+            setSession(session);
+            setUser(session.user);
+            void fetchUserData(session.user.id);
+          }
+        } else {
+          setSession(null);
+          setUser(null);
         }
       } catch (err) {
         console.warn('initializeAuth timed out or failed:', err);

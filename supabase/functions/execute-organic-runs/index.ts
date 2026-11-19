@@ -257,6 +257,7 @@ serve(async (req) => {
           // Store provider order ID for status checking
           await supabase.from('organic_run_schedule').update({
             provider_order_id: providerOrderId,
+            ...(providerOrderId ? { provider_requested_quantity: quantityToSend, provider_history_order_id: String(providerOrderId) } : {}),
             provider_response: result
           }).eq('id', run.id)
           

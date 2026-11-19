@@ -31,6 +31,7 @@ import { toast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { Input } from '@/components/ui/input';
 import { ZapUpiWebhookHealthCard } from '@/components/admin/ZapUpiWebhookHealthCard';
+import BinancePayAdmin from '@/components/admin/BinancePayAdmin';
 
 export default function AdminDeposits() {
     const { session, isAdmin, isLoading: authLoading } = useAuth();
@@ -354,10 +355,13 @@ export default function AdminDeposits() {
                                     </TableCell>
                                 </TableRow>
                             )}
-                        </TableBody>
-                    </Table>
-                </Card>
-            </div>
-        </DashboardLayout>
+                    </TableBody>
+                </Table>
+            </Card>
+
+            {/* Binance Pay top-up requests + settings */}
+            <BinancePayAdmin />
+        </div>
+    </DashboardLayout>
     );
 }

@@ -1,3 +1,6 @@
+import { useLegalConsentSetting } from '@/hooks/useLegalConsentSetting';
+import { needsLegalConsent } from '@/lib/consent-policy';
+import { LegalConsentCheckbox, recordLegalConsent } from '@/components/legal/LegalConsent';
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
@@ -29,6 +32,8 @@ export default function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [legalAccepted, setLegalAccepted] = useState(false);
+  const { enabled: legalConsentEnabled } = useLegalConsentSetting();
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -86,6 +91,7 @@ export default function Auth() {
         }
         navigate('/engagement-order', { replace: true });
       } else {
+        if (needsLegalConsent(legalConsentEnabled, legalAccepted)) { setError('You must accept the legal terms to create an account.'); setIsSubmitting(false); return; }
         const v = signupSchema.safeParse({ email, password, fullName });
         if (!v.success) { setError(firstIssue(v.error, 'Please check your details.')); setIsSubmitting(false); return; }
         const { error, needsEmailConfirmation } = await signUp(email, password, fullName);
@@ -98,6 +104,7 @@ export default function Auth() {
           else setError(clean);
           setIsSubmitting(false); return;
         }
+        if (legalConsentEnabled && legalAccepted) recordLegalConsent('signup', { email: email.trim(), reference: 'signup' });
         if (needsEmailConfirmation) {
           setShowVerifyEmail(true);
         } else {
@@ -199,6 +206,8 @@ export default function Auth() {
                     </div>
                   </div>
 
+                  {!isLogin && legalConsentEnabled && <LegalConsentCheckbox checked={legalAccepted} onChange={setLegalAccepted} />}
+
                   {error && <p className="text-[13px] font-medium" style={{ color: '#ef4444' }}>{error}</p>}
                   {successMessage && <p className="text-[13px] font-medium" style={{ color: '#22c55e' }}>{successMessage}</p>}
 
@@ -218,7 +227,7 @@ export default function Auth() {
           )}
 
           {/* Telegram */}
-          <a href="https://t.me/organicsmm" target="_blank" rel="noopener noreferrer" className="mt-8 flex items-center gap-3 p-3.5 rounded-xl transition-colors" style={{ border: '1px solid rgba(0,0,0,.06)', background: 'white' }}>
+          <a href="https://t.me/organicsmmpanel" target="_blank" rel="noopener noreferrer" className="mt-8 flex items-center gap-3 p-3.5 rounded-xl transition-colors" style={{ border: '1px solid rgba(0,0,0,.06)', background: 'white' }}>
             <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: '#0088cc15' }}>
               <svg className="w-4 h-4 fill-[#0088cc]" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.07-.2-.08-.06-.19-.04-.27-.02-.11.02-1.93 1.23-5.46 3.62-.51.35-.98.53-1.39.52-.46-.01-1.33-.26-1.98-.48-.8-.27-1.43-.42-1.37-.89.03-.25.38-.51 1.03-.78 4.04-1.76 6.74-2.92 8.09-3.48 3.85-1.61.8-1.88 1.77-1.88.21 0 .69.05.99.23.32.19.43.46.46.72.02.16.01.32-.01.48z" /></svg>
             </div>

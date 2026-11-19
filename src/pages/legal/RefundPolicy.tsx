@@ -98,6 +98,11 @@ export default function RefundPolicy() {
               </div>
             </section>
 
+            <section className="space-y-3 rounded-xl border border-red-500/30 bg-red-500/5 p-5">
+              <h2 className="text-xl font-bold text-foreground">Forfeiture for Anti-Fraud Violations</h2>
+              <p><strong className="text-foreground">Accounts terminated for violating the Anti-Fraud Policy, for spamming, botting, or for generating complaints from third parties (brands, companies or individuals) forfeit 100% of their wallet balance, with zero right to any refund, credit or chargeback.</strong></p>
+            </section>
+
             <section className="space-y-3">
               <h2 className="text-xl font-semibold text-foreground">8. How to Request a Refund or Credit</h2>
               <p>To request a wallet credit:</p>
@@ -117,7 +122,7 @@ export default function RefundPolicy() {
 
             <section className="space-y-3">
               <h2 className="text-xl font-semibold text-foreground">10. Disputes</h2>
-              <p>If you disagree with a refund decision, you may escalate by emailing <strong className="text-foreground">support@organicsmm.com</strong> with additional evidence. We will review escalated cases within 7 business days. Our decision on escalated cases is final.</p>
+              <p>If you disagree with a refund decision, you may escalate by emailing <strong className="text-foreground">organicsmmofficial@gmail.com</strong> with additional evidence. We will review escalated cases within 7 business days. Our decision on escalated cases is final.</p>
             </section>
 
             <section className="space-y-3">

@@ -90,6 +90,16 @@ if [ -n "$OXAPAY_EFFECTIVE_KEY" ]; then
 else
   log "WARNING: OxaPay merchant API key is missing in $SECRETS_FILE"
 fi
+if grep -q '^BINANCE_API_KEY=.' "$SECRETS_FILE" && grep -q '^BINANCE_API_SECRET=.' "$SECRETS_FILE"; then
+  ok "Binance Pay API keys configured"
+else
+  log "WARNING: BINANCE_API_KEY/BINANCE_API_SECRET missing in $SECRETS_FILE — Binance Pay top-up disabled"
+fi
+if grep -q '^BINANCE_CLAIM_TOKEN=.' "$SECRETS_FILE"; then
+  ok "Binance cross-site claim token configured"
+else
+  log "WARNING: BINANCE_CLAIM_TOKEN missing in $SECRETS_FILE — cross-site claim endpoint disabled"
+fi
 if grep -q '^TELEGRAM_BOT_TOKEN=.' "$ENVF" && grep -q '^TELEGRAM_CHAT_ID=.' "$ENVF"; then
   ok "Telegram bot token aur admin chat ID configured"
 else
@@ -113,6 +123,12 @@ if [ -n "$OXAPAY_EFFECTIVE_KEY" ]; then
   sed -i '/^OXAPAY_MERCHANT_API_KEY=/d' .env
   printf 'OXAPAY_MERCHANT_API_KEY=%s\n' "$OXAPAY_EFFECTIVE_KEY" >> .env
 fi
+if [ -n "${BINANCE_API_KEY:-}" ]; then
+  touch .env
+  sed -i '/^BINANCE_API_KEY=/d;/^BINANCE_API_SECRET=/d' .env
+  printf 'BINANCE_API_KEY=%s\n' "$BINANCE_API_KEY" >> .env
+  printf 'BINANCE_API_SECRET=%s\n' "${BINANCE_API_SECRET:-}" >> .env
+fi
 # Keep the env attachment in the installation's normal override too. Without
 # this, a later plain `docker compose up -d` recreates Edge Runtime without the
 # payment key and payments fail until the repair timer runs.
@@ -130,6 +146,8 @@ block = """  # ORGANICSMM_FUNCTIONS_ENV
     environment:
       ZAPUPI_ZAP_KEY: ${ZAPUPI_ZAP_KEY:-}
       OXAPAY_MERCHANT_API_KEY: ${OXAPAY_MERCHANT_API_KEY:-}
+      BINANCE_API_KEY: ${BINANCE_API_KEY:-}
+      BINANCE_API_SECRET: ${BINANCE_API_SECRET:-}
 """
 if marker in s:
     start = s.index(marker)
@@ -152,6 +170,8 @@ services:
     environment:
       ZAPUPI_ZAP_KEY: ${ZAPUPI_ZAP_KEY:-}
       OXAPAY_MERCHANT_API_KEY: ${OXAPAY_MERCHANT_API_KEY:-}
+      BINANCE_API_KEY: ${BINANCE_API_KEY:-}
+      BINANCE_API_SECRET: ${BINANCE_API_SECRET:-}
 YML
 # Some installations export COMPOSE_FILE / COMPOSE_PROFILES which silently
 # changes which files docker compose reads. Neutralise that here.

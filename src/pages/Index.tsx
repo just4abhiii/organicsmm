@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, TrendingUp, Zap, Shield, BarChart3, CheckCircle2, Shuffle, Clock, Moon, Timer, Eye, ChevronRight, FileText, Lock, HelpCircle, Mail, Code2, Activity, Sparkles, Star, Link2, Heart, MessageCircle, Bookmark, Share2, Brain, ArrowDown } from 'lucide-react';
+import { ArrowRight, TrendingUp, Zap, Shield, BarChart3, CheckCircle2, Shuffle, Clock, Moon, Timer, Eye, ChevronRight, FileText, Lock, HelpCircle, Mail, Code2, Activity, Sparkles, Star, Link2, Heart, MessageCircle, Bookmark, Share2, Brain, ArrowDown, Play } from 'lucide-react';
 import logo from '@/assets/logo.jpg';
 import { PageMeta } from '@/components/seo/PageMeta';
 
@@ -53,6 +53,7 @@ const CountUp: React.FC<{ to: number; suffix?: string; decimals?: number }> = ({
 };
 
 const Index = () => {
+  const [isPlayingVideo, setIsPlayingVideo] = React.useState(false);
   return (
     <div className="min-h-screen w-full overflow-x-hidden" style={{ background: C.bg, color: C.ink, fontFamily: "'Inter', system-ui, sans-serif" }}>
       <PageMeta
@@ -98,11 +99,28 @@ const Index = () => {
             ))}
           </div>
           <div className="flex items-center gap-2">
+            <a
+              href="#how-to-use"
+              onClick={(e) => {
+                e.preventDefault();
+                document.getElementById('how-to-use')?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="inline-flex h-9 px-3 sm:px-3.5 items-center gap-1.5 text-[12px] sm:text-[13px] font-bold rounded-xl transition-all hover:scale-[1.03] active:scale-[0.98]"
+              style={{
+                background: 'linear-gradient(135deg, rgba(16,185,129,.14), rgba(5,150,105,.22))',
+                color: C.orangeDeep,
+                border: '1px solid rgba(16,185,129,.35)',
+                boxShadow: '0 2px 8px rgba(16,185,129,.12)',
+              }}
+            >
+              <Play className="w-3.5 h-3.5 fill-current text-emerald-600" />
+              <span>How to use</span>
+            </a>
             <Link to="/auth" className="hidden sm:inline-flex h-9 px-3.5 items-center text-[13px] font-semibold rounded-xl transition-colors"
               style={{ color: C.ink2 }}>
               Sign in
             </Link>
-            <Link to="/auth" className="h-9 sm:h-10 px-4 sm:px-5 rounded-xl text-[12.5px] sm:text-[13px] font-semibold text-white inline-flex items-center gap-1.5"
+            <Link to="/auth" className="h-9 sm:h-10 px-3.5 sm:px-5 rounded-xl text-[12.5px] sm:text-[13px] font-semibold text-white inline-flex items-center gap-1.5"
               style={{ background: C.ink, boxShadow: C.soft }}>
               Get Started <ArrowRight className="w-3.5 h-3.5" />
             </Link>
@@ -428,32 +446,130 @@ const Index = () => {
         </div>
       </section>
 
-      {/* ═══ CTA ═══ */}
-      <section className="py-12 sm:py-20 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto rounded-[28px] text-center py-14 sm:py-20 px-6 sm:px-10 relative overflow-hidden"
-          style={{ background: `linear-gradient(135deg, ${C.ink} 0%, #1A1A28 100%)`, boxShadow: C.softLg }}>
-          {/* glow */}
-          <div aria-hidden className="absolute -top-32 -right-32 w-[400px] h-[400px] rounded-full"
-            style={{ background: `radial-gradient(closest-side, rgba(16,185,129,.42), transparent 70%)`, filter: 'blur(20px)' }} />
-          <div aria-hidden className="absolute -bottom-32 -left-32 w-[400px] h-[400px] rounded-full"
-            style={{ background: `radial-gradient(closest-side, rgba(110,231,183,.32), transparent 70%)`, filter: 'blur(20px)' }} />
+      {/* ═══ HOW TO USE / VIDEO SECTION (LIGHT THEME) ═══ */}
+      <section id="how-to-use" className="py-14 sm:py-24 px-4 sm:px-6 lg:px-8 scroll-mt-20">
+        <div className="max-w-5xl mx-auto rounded-[32px] sm:rounded-[40px] text-center py-10 sm:py-16 px-4 sm:px-10 relative overflow-hidden"
+          style={{
+            background: 'linear-gradient(180deg, #FFFFFF 0%, #F0FAF5 100%)',
+            border: '1.5px solid rgba(16,185,129,0.22)',
+            boxShadow: '0 25px 70px -15px rgba(16,185,129,0.20), 0 4px 20px rgba(11,11,18,0.03)',
+          }}>
+          {/* soft ambient green glows */}
+          <div aria-hidden className="absolute -top-32 -right-32 w-[450px] h-[450px] rounded-full pointer-events-none"
+            style={{ background: 'radial-gradient(closest-side, rgba(16,185,129,.18), transparent 70%)', filter: 'blur(40px)' }} />
+          <div aria-hidden className="absolute -bottom-32 -left-32 w-[450px] h-[450px] rounded-full pointer-events-none"
+            style={{ background: 'radial-gradient(closest-side, rgba(110,231,183,.25), transparent 70%)', filter: 'blur(40px)' }} />
 
-          <div className="relative">
-            <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-widest mb-5"
-              style={{ background: 'rgba(255,255,255,.1)', color: '#6EE7B7', border: '1px solid rgba(134,239,172,.2)' }}>
-              <Sparkles className="w-3 h-3" /> Free to start
+          <div className="relative z-10">
+            {/* Pill Badge matching site */}
+            <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[11px] sm:text-[12px] font-semibold mb-4"
+              style={{ background: C.peach, color: C.orangeDeep, border: '1px solid rgba(16,185,129,.25)' }}>
+              <Play className="w-3.5 h-3.5 fill-current" /> Video Tutorial & Platform Demo
             </span>
-            <h2 className="text-[1.85rem] sm:text-4xl lg:text-[2.75rem] font-extrabold tracking-tight mb-4 text-white"
-              style={{ fontFamily: "'Outfit', system-ui" }}>
-              Ready to grow <span style={{ color: '#6EE7B7' }}>organically</span>?
+
+            {/* Heading in dark ink with green highlight */}
+            <h2 className="text-[1.85rem] sm:text-4xl lg:text-[2.75rem] font-extrabold tracking-tight mb-3"
+              style={{ color: C.ink, fontFamily: "'Outfit', system-ui" }}>
+              See How It Works <span style={{ color: C.orangeDeep }}>In Action</span>
             </h2>
-            <p className="text-[14.5px] sm:text-[16px] mb-8 max-w-md mx-auto" style={{ color: 'rgba(255,255,255,.7)' }}>
-              Join thousands of creators using our organic delivery system. No credit card required.
+
+            {/* Subtitle in soft gray */}
+            <p className="text-[14.5px] sm:text-[16px] mb-8 max-w-xl mx-auto leading-relaxed" style={{ color: C.ink2 }}>
+              Watch step-by-step how OrganicSMM automates views, likes and real organic growth with natural human delivery.
             </p>
-            <Link to="/auth" className="inline-flex h-12 sm:h-13 px-8 rounded-xl text-[14.5px] font-bold items-center gap-2 transition-transform hover:-translate-y-0.5"
-              style={{ background: 'white', color: C.ink, boxShadow: '0 10px 30px rgba(0,0,0,.25)' }}>
-              Create free account <ArrowRight className="w-4 h-4" />
-            </Link>
+
+            {/* Video Player Card */}
+            <div className="max-w-4xl mx-auto relative rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl border-2 border-white aspect-video bg-emerald-950/10"
+              style={{
+                boxShadow: '0 25px 60px -12px rgba(16,185,129,0.28), 0 8px 30px rgba(0,0,0,0.08)',
+              }}>
+              {!isPlayingVideo ? (
+                <div
+                  onClick={() => setIsPlayingVideo(true)}
+                  className="w-full h-full relative cursor-pointer select-none group"
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Play video tutorial"
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setIsPlayingVideo(true); }}
+                >
+                  {/* Clean full thumbnail */}
+                  <img
+                    src="https://img.youtube.com/vi/FXIsrzmSPpw/maxresdefault.jpg"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = 'https://img.youtube.com/vi/FXIsrzmSPpw/hqdefault.jpg';
+                    }}
+                    alt="OrganicSMM video tutorial thumbnail"
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.02]"
+                  />
+
+                  {/* Clean subtle hover gradient */}
+                  <div className="absolute inset-0 bg-black/10 group-hover:bg-black/5 transition-colors" />
+
+                  {/* Play Button Overlay */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+                    <div className="relative flex items-center justify-center">
+                      <span className="animate-ping absolute inline-flex h-20 w-20 sm:h-24 sm:w-24 rounded-full bg-emerald-400 opacity-60" />
+                      <div
+                        className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center transition-all duration-300 group-hover:scale-110 shadow-2xl"
+                        style={{
+                          background: 'linear-gradient(135deg, #10B981, #059669)',
+                          boxShadow: '0 0 35px rgba(16,185,129,0.7), 0 8px 25px rgba(0,0,0,0.25)',
+                        }}
+                      >
+                        <Play className="w-7 h-7 sm:w-9 sm:h-9 text-white fill-white ml-1" />
+                      </div>
+                    </div>
+                    <span className="text-[12px] sm:text-[13px] font-bold text-emerald-950 bg-white/95 px-4 py-1.5 rounded-full shadow-lg border border-emerald-500/20 backdrop-blur-md group-hover:bg-emerald-500 group-hover:text-white transition-all">
+                      Click to Play Video
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <iframe
+                  src="https://www.youtube-nocookie.com/embed/FXIsrzmSPpw?autoplay=1&rel=0&modestbranding=1"
+                  title="The Ultimate Organic SMM Guide"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                  className="w-full h-full border-0"
+                />
+              )}
+            </div>
+
+            {/* CTAs below video */}
+            <div className="mt-8 sm:mt-10 flex flex-col sm:flex-row items-center justify-center gap-3.5">
+              <Link
+                to="/auth"
+                className="w-full sm:w-auto inline-flex h-12 sm:h-13 px-8 rounded-xl text-[14.5px] font-bold items-center justify-center gap-2 text-white transition-transform hover:-translate-y-0.5"
+                style={{
+                  background: `linear-gradient(135deg, ${C.orange}, ${C.orangeDeep})`,
+                  boxShadow: '0 10px 30px rgba(16,185,129,.35)',
+                }}
+              >
+                <Sparkles className="w-4 h-4" /> Start growing free <ArrowRight className="w-4 h-4" />
+              </Link>
+              <a
+                href="https://youtu.be/FXIsrzmSPpw"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full sm:w-auto inline-flex h-12 sm:h-13 px-6 rounded-xl text-[13.5px] font-semibold items-center justify-center gap-2 transition-colors hover:bg-white"
+                style={{
+                  background: C.card,
+                  color: C.ink,
+                  border: `1px solid ${C.line}`,
+                  boxShadow: C.soft,
+                }}
+              >
+                Watch on YouTube ↗
+              </a>
+            </div>
+
+            <div className="flex items-center justify-center gap-x-5 gap-y-2 flex-wrap text-[12px] sm:text-[13px] font-medium mt-6" style={{ color: C.muted }}>
+              {['No credit card required', 'All features included', 'Setup in seconds'].map((t) => (
+                <span key={t} className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" style={{ color: '#10b981' }} /> {t}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -505,6 +621,7 @@ const Index = () => {
                   { to: '/refund', icon: FileText, label: 'Refund Policy' },
                   { to: '/shipping', icon: FileText, label: 'Shipping & Delivery' },
                   { to: '/cookies', icon: FileText, label: 'Cookie Policy' },
+                  { to: '/report-abuse', icon: Shield, label: 'Report Abuse & Grievance Officer' },
                 ].map((l) => (
                   <Link key={l.to} to={l.to} className="flex items-center gap-1.5 text-[13px] hover:text-emerald-600 transition-colors" style={{ color: C.ink2 }}>
                     <l.icon className="w-3 h-3 flex-shrink-0" /> {l.label}
@@ -525,20 +642,13 @@ const Index = () => {
                     <l.icon className="w-3 h-3 flex-shrink-0" /> {l.label}
                   </Link>
                 ))}
-                <a href="mailto:support@organicsmm.online" className="block text-[12px] mt-2" style={{ color: C.muted }}>support@organicsmm.online</a>
-                <a href="tel:+13678288027" className="block text-[12px]" style={{ color: C.muted }}>+1 (367) 828-8027</a>
-                <p className="text-[12px] leading-relaxed mt-2" style={{ color: C.muted }}>
-                  OrganicSMM LLC<br />
-                  8 The Green, Suite #14490<br />
-                  Dover, DE 19901<br />
-                  United States
-                </p>
+                <a href="mailto:organicsmmofficial@gmail.com" className="block text-[12px] mt-2 break-all" style={{ color: C.muted }}>organicsmmofficial@gmail.com</a>
               </div>
             </div>
           </div>
 
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6" style={{ borderTop: `1px solid ${C.line}` }}>
-            <p className="text-[12px]" style={{ color: C.muted }}>© {new Date().getFullYear()} OrganicSMM LLC — Dover, Delaware, USA. All rights reserved.</p>
+            <p className="text-[12px]" style={{ color: C.muted }}>© 2026 OrganicSMM. All rights reserved. Operated as an Automated Digital Marketing API Intermediary.</p>
             <div className="flex items-center gap-5 text-[12px] font-medium" style={{ color: C.muted }}>
               <span className="flex items-center gap-1"><Shield className="w-3 h-3" style={{ color: '#10b981' }} /> SSL Secured</span>
               <span className="flex items-center gap-1"><Zap className="w-3 h-3" style={{ color: C.orange }} /> 99.9% Uptime</span>

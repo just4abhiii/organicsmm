@@ -42,6 +42,7 @@ const typeColors: Record<EngagementType, string> = {
   views: 'bg-foreground',
   likes: 'bg-foreground/90',
   comments: 'bg-foreground/80',
+  custom_comments: 'bg-foreground/75',
   saves: 'bg-foreground/70',
   shares: 'bg-foreground/60',
   followers: 'bg-foreground/55',

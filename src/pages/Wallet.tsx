@@ -5,9 +5,11 @@ import { useTransactions, type TransactionFilter } from '@/hooks/useTransactions
 import { useCurrency } from '@/hooks/useCurrency';
 import ZapUpiDepositCard from '@/components/wallet/ZapUpiDepositCard';
 import OxaPayAddFunds from '@/components/wallet/OxaPayAddFunds';
+import BinancePayAddFunds from '@/components/wallet/BinancePayAddFunds';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import {
@@ -27,7 +29,7 @@ export default function Wallet() {
   const [filter, setFilter] = useState<TransactionFilter>('all');
   const { data: transactions } = useTransactions(filter);
   const qc = useQueryClient();
-  const [depositMethod, setDepositMethod] = useState<'upi' | 'crypto'>('upi');
+  const [depositMethod, setDepositMethod] = useState<'upi' | 'crypto' | 'binance'>('upi');
 
   // Handle ZapUPI return — poll server-verify until the order is credited (or give up after ~3 min).
   useEffect(() => {
@@ -396,7 +398,7 @@ export default function Wallet() {
 
         {/* Deposit Section — UPI + Crypto tabs */}
         <div>
-          <div className="flex gap-2 mb-3">
+          <div className="wallet-payment-methods flex flex-wrap gap-2 mb-3">
             <button
               onClick={() => setDepositMethod('upi')}
               className="flex-1 py-2.5 rounded-xl text-[13px] font-bold transition-all"
@@ -421,8 +423,18 @@ export default function Wallet() {
             >
               🪙 Crypto
             </button>
+            <Button
+              type="button"
+              variant="outline"
+              aria-pressed={depositMethod === 'binance'}
+              onClick={() => setDepositMethod('binance')}
+              className="binance-method"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5 shrink-0" fill="currentColor"><path d="m12 2 4 4-2 2-2-2-2 2-2-2 4-4ZM6 8l2 2-2 2-2-2 2-2Zm12 0 2 2-2 2-2-2 2-2Zm-6 0 4 4-4 4-4-4 4-4ZM6 12l2 2-2 2-2-2 2-2Zm12 0 2 2-2 2-2-2 2-2Zm-8 4 2 2 2-2 2 2-4 4-4-4 2-2Z"/></svg>
+              Binance Pay
+            </Button>
           </div>
-          {depositMethod === 'upi' ? <ZapUpiDepositCard /> : <OxaPayAddFunds />}
+          {depositMethod === 'upi' ? <ZapUpiDepositCard /> : depositMethod === 'crypto' ? <OxaPayAddFunds /> : <BinancePayAddFunds />}
         </div>
 
         {/* Transaction History */}

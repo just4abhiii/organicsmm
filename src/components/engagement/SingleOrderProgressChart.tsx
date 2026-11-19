@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { providerRunDelivered } from "@/lib/provider-delivery";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, AreaChart } from "recharts";
@@ -54,7 +55,7 @@ export function SingleOrderProgressChart({ runs, serviceName = "Views", serviceC
       if (run.status === 'completed') return true;
       if ((run.status === 'started' || run.status === 'failed') && 
           run.provider_remains !== null && run.provider_remains !== undefined) {
-        return run.quantity_to_send - run.provider_remains > 0;
+        return providerRunDelivered(run) > 0;
       }
       return false;
     });
@@ -73,7 +74,7 @@ export function SingleOrderProgressChart({ runs, serviceName = "Views", serviceC
       .reduce((sum, r) => sum + r.quantity_to_send, 0);
     const inProgressDelivered = runs
       .filter(r => r.status === 'started' && r.provider_remains !== null && r.provider_remains !== undefined)
-      .reduce((sum, r) => Math.max(0, r.quantity_to_send - (r.provider_remains || 0)), 0);
+      .reduce((sum, r) => providerRunDelivered(r), 0);
     const completedRuns = runs.filter(r => r.status === 'completed').length;
     const pendingRuns = runs.filter(r => r.status === 'pending').length;
     const startedRuns = runs.filter(r => r.status === 'started').length;
@@ -115,7 +116,7 @@ export function SingleOrderProgressChart({ runs, serviceName = "Views", serviceC
         deliveredQty = run.quantity_to_send;
       } else if ((run.status === 'started' || run.status === 'failed') && 
                  run.provider_remains !== null && run.provider_remains !== undefined) {
-        deliveredQty = Math.max(0, run.quantity_to_send - run.provider_remains);
+        deliveredQty = providerRunDelivered(run);
       }
 
       cumulative += deliveredQty;

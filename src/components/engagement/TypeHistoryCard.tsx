@@ -1,3 +1,5 @@
+import { RunDeliveryEvidence } from "./ProviderDeliveryHistory";
+import { providerRunDelivered } from "@/lib/provider-delivery";
 import { useState } from "react";
 import { useCurrency } from "@/hooks/useCurrency";
 import { Card, CardContent } from "@/components/ui/card";
@@ -132,8 +134,6 @@ export function TypeHistoryCard({
     if (isTargetMetAutoCompleted(run)) return 'completed';
 
     const ps = normalizeProviderStatus(run.provider_status);
-
-    if (run.provider_order_id && run.provider_remains === 0) return 'completed';
     if (ps === 'completed' || ps === 'complete' || ps === 'partial') return 'completed';
     // Provider pending with provider_order_id means provider accepted it; show as Processing, not overdue/pending.
     if (ps === 'pending') return run.provider_order_id ? 'started' : 'pending';
@@ -163,7 +163,7 @@ export function TypeHistoryCard({
 
     // If we have remains, it’s the most accurate signal (including partial/in progress)
     if (run.provider_remains !== null && run.provider_remains !== undefined) {
-      return Math.max(0, run.quantity_to_send - run.provider_remains);
+      return providerRunDelivered(run);
     }
 
     // Legacy fallback
@@ -495,29 +495,7 @@ export function TypeHistoryCard({
 
                         {/* Timestamps Row - Colorful */}
                         <div className="flex items-center gap-4 mt-1.5 text-sm text-muted-foreground flex-wrap">
-                          {run.runStartCount !== null && run.runStartCount !== undefined && (
-                            <span className="flex items-center gap-1 text-cyan-400">
-                              📊
-                              <span className="font-bold tabular-nums text-foreground">
-                                {run.runStartCount.toLocaleString()}
-                              </span>
-                              <span className="text-muted-foreground">→</span>
-                              {isCompleted && run.runEndCount !== null ? (
-                                <span className="font-bold tabular-nums text-emerald-400">
-                                  {run.runEndCount.toLocaleString()}
-                                </span>
-                              ) : (
-                                <span className="tabular-nums text-muted-foreground italic">
-                                  in progress…
-                                </span>
-                              )}
-                              {isCompleted && run.actualDeliveredThisRun > 0 && (
-                                <span className="text-xs text-muted-foreground">
-                                  (+{run.actualDeliveredThisRun.toLocaleString()})
-                                </span>
-                              )}
-                            </span>
-                          )}
+                          <RunDeliveryEvidence run={run} />
                           <span className="flex items-center gap-1">
                             📅 Scheduled: {format(scheduledDate, 'MMM d, hh:mm a')}
                             <span className={`ml-1 font-medium ${isActive ? 'text-blue-400' : isPastDue ? 'text-amber-500' : 'text-teal-400'}`}>

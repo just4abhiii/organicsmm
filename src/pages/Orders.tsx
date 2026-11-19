@@ -30,6 +30,7 @@ import {
 import type { Order, OrganicRun } from '@/lib/supabase';
 import { PageMeta } from '@/components/seo/PageMeta';
 import { EditRunDialog } from '@/components/engagement/EditRunDialog';
+import { ProviderDeliveryHistory } from '@/components/engagement/ProviderDeliveryHistory';
 import { SingleOrderProgressChart } from '@/components/engagement/SingleOrderProgressChart';
 
 const statusFilters = ['All', 'pending', 'processing', 'completed', 'partial', 'failed', 'cancelled'];
@@ -526,6 +527,7 @@ export default function Orders() {
                             </div>
                           </div>
 
+                          <div className="p-4 border-b border-border"><ProviderDeliveryHistory runs={organicRuns} orderNumber={order.order_number} /></div>
                           {/* Real-time Delivery Progress Chart */}
                           <div className="p-4 border-b border-border">
                             <SingleOrderProgressChart 

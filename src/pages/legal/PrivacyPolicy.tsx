@@ -85,6 +85,11 @@ export default function PrivacyPolicy() {
               <p>We retain your personal data for as long as your account is active or as needed to provide services. We may retain certain information after account closure for legitimate business purposes, legal compliance, dispute resolution, and enforcement of our agreements. Anonymized or aggregated data may be retained indefinitely.</p>
             </section>
 
+            <section className="space-y-3 rounded-xl border border-red-500/30 bg-red-500/5 p-5">
+              <h2 className="text-xl font-bold text-foreground">Mandatory Legal & Law Enforcement Disclosure</h2>
+              <p><strong className="text-foreground">By using OrganicSMM, you expressly authorise us to record and retain your IP address logs, device fingerprint and user-agent data, consent records, order history, target URLs, and payment/transaction trails. You further authorise us to disclose these records to police, cybercrime units, courts, regulators, or any aggrieved company or brand investigating fraud, botting, spam or misuse — without prior notice to you, to the extent permitted by law.</strong></p>
+            </section>
+
             <section className="space-y-3">
               <h2 className="text-xl font-semibold text-foreground">8. Your Rights</h2>
               <p>Depending on your jurisdiction, you may have the following rights:</p>
@@ -110,7 +115,7 @@ export default function PrivacyPolicy() {
 
             <section className="space-y-3">
               <h2 className="text-xl font-semibold text-foreground">11. Contact Us</h2>
-              <p>If you have questions or concerns about this Privacy Policy or our data practices, please contact us through our Support page or email us at privacy@organicsmm.com.</p>
+              <p>If you have questions or concerns about this Privacy Policy or our data practices, please contact us through our Support page or email us at organicsmmofficial@gmail.com.</p>
             </section>
           </div>
         </div>

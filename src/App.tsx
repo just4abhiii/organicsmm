@@ -79,6 +79,8 @@ const PrivacyPolicy = lazy(() => import("./pages/legal/PrivacyPolicy"));
 const RefundPolicy = lazy(() => import("./pages/legal/RefundPolicy"));
 const CookiePolicy = lazy(() => import("./pages/legal/CookiePolicy"));
 const ContactUs = lazy(() => import("./pages/legal/ContactUs"));
+const ReportAbuse = lazy(() => import("./pages/legal/ReportAbuse"));
+const AdminAbuseReports = lazy(() => import("./pages/admin/AdminAbuseReports"));
 const AboutUs = lazy(() => import("./pages/legal/AboutUs"));
 const Services = lazy(() => import("./pages/Services"));
 const PlatformLanding = lazy(() => import("./pages/landing/PlatformLanding"));
@@ -187,6 +189,8 @@ const App = () => {
                     <Route path="/refund" element={<RefundPolicy />} />
                     <Route path="/cookies" element={<CookiePolicy />} />
                     <Route path="/contact" element={<ContactUs />} />
+                    <Route path="/report-abuse" element={<ReportAbuse />} />
+                    <Route path="/admin/abuse-reports" element={<AdminGuard><AdminAbuseReports /></AdminGuard>} />
                     <Route path="/about" element={<AboutUs />} />
                     <Route path="/services" element={<Services />} />
                     {platformPages.map((p) => (

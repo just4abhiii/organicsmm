@@ -109,57 +109,36 @@ export default function AdminUsers() {
     queryKey: ['admin-all-users-with-subs'],
     queryFn: async () => {
       let rows: any[] = [];
-      const { data, error } = await supabase.rpc('get_admin_users_summary' as any);
-      if (!error && Array.isArray(data)) rows = data as any[];
-
-      // Fallback: RPC missing/limited (self-hosted) — direct paginated fetch
+      // Count first: the summary RPC is capped at 1000 rows by the API, so with
+      // more users it is skipped and the paginated fetch below is used directly.
       const { count: profileCount } = await supabase
         .from('profiles')
         .select('id', { count: 'exact', head: true });
+      if ((profileCount || 0) <= 1000) {
+        const { data, error } = await supabase.rpc('get_admin_users_summary' as any);
+        if (!error && Array.isArray(data)) rows = data as any[];
+      }
 
       if (rows.length === 0 || (profileCount || 0) > rows.length) {
         const pageSize = 1000;
-        const profiles: any[] = [];
-        for (let from = 0; ; from += pageSize) {
-          const { data: p, error: pe } = await supabase
-            .from('profiles')
-            .select('id, user_id, email, full_name, created_at, is_banned, banned_at, banned_reason')
-            .order('created_at', { ascending: false })
-            .range(from, from + pageSize - 1);
-          if (pe) throw pe;
-          profiles.push(...(p || []));
-          if (!p || p.length < pageSize) break;
-        }
-
-        const wallets: any[] = [];
-        for (let from = 0; ; from += pageSize) {
-          const { data: w } = await supabase
-            .from('wallets')
-            .select('user_id, balance, total_deposited, total_spent')
-            .range(from, from + pageSize - 1);
-          wallets.push(...(w || []));
-          if (!w || w.length < pageSize) break;
-        }
-
-        const roles: any[] = [];
-        for (let from = 0; ; from += pageSize) {
-          const { data: r } = await supabase
-            .from('user_roles')
-            .select('user_id, role')
-            .range(from, from + pageSize - 1);
-          roles.push(...(r || []));
-          if (!r || r.length < pageSize) break;
-        }
-
-        const subs: any[] = [];
-        for (let from = 0; ; from += pageSize) {
-          const { data: s } = await supabase
-            .from('subscriptions')
-            .select('user_id, plan_type, status, expires_at')
-            .range(from, from + pageSize - 1);
-          subs.push(...(s || []));
-          if (!s || s.length < pageSize) break;
-        }
+        const fetchAll = async (table: string, cols: string, ordered: boolean) => {
+          const out: any[] = [];
+          for (let from = 0; ; from += pageSize) {
+            let q: any = supabase.from(table as any).select(cols);
+            if (ordered) q = q.order('created_at', { ascending: false });
+            const { data: page, error: pageErr } = await q.range(from, from + pageSize - 1);
+            if (pageErr) { if (ordered) throw pageErr; break; }
+            out.push(...(page || []));
+            if (!page || page.length < pageSize) break;
+          }
+          return out;
+        };
+        const [profiles, wallets, roles, subs] = await Promise.all([
+          fetchAll('profiles', 'id, user_id, email, full_name, created_at, is_banned, banned_at, banned_reason', true),
+          fetchAll('wallets', 'user_id, balance, total_deposited, total_spent', false),
+          fetchAll('user_roles', 'user_id, role', false),
+          fetchAll('subscriptions', 'user_id, plan_type, status, expires_at', false),
+        ]);
 
         const wMap = new Map(wallets.map((w) => [w.user_id, w]));
         const rMap = new Map<string, string>();

@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { providerRunDelivered } from "@/lib/provider-delivery";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
@@ -76,7 +77,7 @@ export function OrderProgressChart({ runs, perType }: OrderProgressChartProps) {
       if (run.status === 'completed' || isTargetMetAutoCompleted) return true;
       if ((run.status === 'started' || run.status === 'failed') && 
           run.provider_remains !== null && run.provider_remains !== undefined) {
-        return run.quantity_to_send - run.provider_remains > 0;
+        return providerRunDelivered(run) > 0;
       }
       return false;
     });
@@ -127,7 +128,7 @@ export function OrderProgressChart({ runs, perType }: OrderProgressChartProps) {
         deliveredQty = run.quantity_to_send;
       } else if ((run.status === 'started' || run.status === 'failed') && 
                  run.provider_remains !== null && run.provider_remains !== undefined) {
-        deliveredQty = Math.max(0, run.quantity_to_send - run.provider_remains);
+        deliveredQty = providerRunDelivered(run);
       }
 
       // Update cumulative for this type
